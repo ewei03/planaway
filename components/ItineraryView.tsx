@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { activityQuery, heroPhotos, lodgingQuery } from "@/lib/route";
 import { anchorKey, money, safeUrl, type CommentAnchor, type CommentTarget, type Itinerary } from "./client";
 import { HeroPhotos, PlaceThumb, type PlaceLookup } from "./places";
+import { TipText } from "./TipText";
 import { dayColor } from "./TripMap";
 
 type Day = Itinerary["days"][number];
@@ -43,6 +44,88 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h3>{title}</h3>
       {children}
     </div>
+  );
+}
+
+/** Tips start open; sources, usually a long list of links, start collapsed. */
+const BOX_OPEN_BY_DEFAULT = { tips: true, sources: false };
+
+/**
+ * A boxed section that stands apart from the plan itself, for tips and
+ * sources. The whole box collapses from its header; each person's choice is
+ * remembered in their browser.
+ */
+function InfoBox({ tone, icon, title, count, children }: { tone: "tips" | "sources"; icon: string; title: string; count?: number; children: ReactNode }) {
+  const storageKey = `planaway:box-open:${tone}`;
+  const [open, setOpen] = useState(BOX_OPEN_BY_DEFAULT[tone]);
+  const bodyId = useId();
+
+  // Read after mount so the first render matches the server's.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved !== null) setOpen(saved === "1");
+    } catch {}
+  }, [storageKey]);
+
+  const toggle = () => {
+    setOpen(!open);
+    try {
+      localStorage.setItem(storageKey, open ? "0" : "1");
+    } catch {}
+  };
+
+  return (
+    <section className={`info-box info-box-${tone} ${open ? "open" : ""}`}>
+      <h3 className="info-box-head">
+        <button aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+          <span className="info-box-icon" aria-hidden="true">
+            {icon}
+          </span>
+          <span className="info-box-title">{title}</span>
+          {/* Decoration: the heading's name stays just the title. */}
+          {count !== undefined && (
+            <span className="info-box-count" aria-hidden="true">
+              {count}
+            </span>
+          )}
+          <span className="info-box-chevron" aria-hidden="true" />
+        </button>
+      </h3>
+      {/* Grid rows animate between 0fr and 1fr; inert keeps collapsed links out of tab order. */}
+      <div className="info-box-body" id={bodyId} inert={!open}>
+        <div className="info-box-inner">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+/** One source as a whole clickable row: site badge, title, domain. Unsafe URLs stay plain text. */
+function SourceLink({ title, url }: { title: string; url: string }) {
+  const href = safeUrl(url);
+  const domain = href ? new URL(href).hostname.replace(/^www\./, "") : null;
+  const body = (
+    <>
+      <span className="source-badge" aria-hidden="true">
+        {(domain ?? title).slice(0, 1).toUpperCase()}
+      </span>
+      <span className="source-text">
+        <span className="source-title">{title}</span>
+        {domain && <span className="source-domain">{domain}</span>}
+      </span>
+      {href && (
+        <span className="source-arrow" aria-hidden="true">
+          ↗
+        </span>
+      )}
+    </>
+  );
+  return href ? (
+    <a className="source" href={href} target="_blank" rel="noopener noreferrer">
+      {body}
+    </a>
+  ) : (
+    <div className="source">{body}</div>
   );
 }
 
@@ -207,25 +290,29 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
       )}
 
       {it.tips.length > 0 && (
-        <Section title="Tips">
-          <ul className="list">
+        <InfoBox tone="tips" icon="💡" title="Tips">
+          <ol className="tip-list">
             {it.tips.map((t, i) => (
-              <li key={i}>{t}</li>
+              <li key={i}>
+                <span>
+                  <TipText text={t} />
+                </span>
+              </li>
             ))}
-          </ul>
-        </Section>
+          </ol>
+        </InfoBox>
       )}
 
       {it.sources.length > 0 && (
-        <Section title="Sources">
-          <ul className="list">
+        <InfoBox tone="sources" icon="🔗" title="Sources" count={it.sources.length}>
+          <ul className="source-list">
             {it.sources.map((s, i) => (
               <li key={i}>
-                <Link text={s.title} url={s.url} />
+                <SourceLink title={s.title} url={s.url} />
               </li>
             ))}
           </ul>
-        </Section>
+        </InfoBox>
       )}
 
       <p className="disclaimer">Prices are estimates found on the web and change often. Confirm before booking.</p>

@@ -13,6 +13,8 @@ export function tripView(overrides: Partial<TripView> = {}): TripView {
     title: "Kyoto Food Weekend",
     role: "owner",
     canDelete: true,
+    canShare: true,
+    sharedBy: null,
     revision: 1,
     itinerary: sampleItinerary(),
     chat: [],

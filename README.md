@@ -72,17 +72,19 @@ Create an account. You get a **Personal** group for trips you plan alone.
 - **🎲 Surprise me**: a random destination that fits whatever origin, budget, and dates you entered.
 
 **Planning together:**
-- **Groups** own trips. Click **+ New group**, then use ⚙ to create an invite link as an editor or a viewer. Links expire after 7 days and can be revoked. Every trip in a group is shared with all its members.
+- **Sharing a trip.** Choose **Share…** in a trip's ⋯ menu to create an invite link that lets someone edit or view it. A link gives access to that one trip, never the rest of your trips or the group it's in. Links expire after 1, 7 (the default), or 30 days, or never, and you can revoke them. The same dialog lists who joined, where you can change their role or remove them. A trip's creator and its group's owners can share it.
+- **Invite links** open a preview of the trip (title, destinations, dates, summary) that anyone with the link can see. Joining needs an account and an explicit **Join trip** click. Trips shared with you appear under **Shared with you**, where you can leave them. Tokens are 192 random bits.
 
   | Role | Can |
   | --- | --- |
-  | Owner | Everything, plus manage members and invites, delete trips and the group |
-  | Editor | Chat with the agent, create and rename trips, save versions |
-  | Viewer | Read trips, comment, export |
+  | Editor | Change the itinerary with the agent, rename the trip, save versions, comment, export |
+  | Viewer | View the itinerary, comment, export |
+
+- **Groups** are folders of trips. Everyone in a group sees all its trips, as an owner, editor, or viewer. Owners manage members and can delete the group. Owners can't change their own role; to step down, use **Transfer ownership**, which makes another member the owner and you an editor. There are no group invite links: to bring someone new in, share a trip.
 
 - **Shared chat.** Everyone in the group sees the conversation with the agent, and messages show who sent them. One person's request runs at a time. Others see "Maya is asking PlanAway…" and get the result when it finishes.
 - **Comments.** Click 💬 next to any activity, day, flight, stay, or budget line (or the trip title) to start a thread, e.g. "too pricey" or "vegetarian options?". Threads can be replied to, resolved, and reopened. On the next turn the agent sees new comments, changes the plan, replies in the threads, and resolves the ones it addressed. **✨ Ask PlanAway to address open comments** in the comments panel triggers that directly.
-- Open tabs check for collaborators' changes every 4 seconds.
+- Open tabs check for collaborators' changes every 4 seconds. The same check shows who else has the trip open, as initials next to 💬 above the itinerary.
 
 **Saving and exporting:**
 - **Save** stores a named snapshot of the current draft. Pick it from the version menu to view or export it later.
@@ -100,8 +102,8 @@ Each trip keeps the full API transcript (`trip_messages`), so later refinements 
 
 Code layout:
 
-- `app/api/…`: route handlers: registration and Auth.js, groups, members, invites, trips, messages (streamed), comments, versions, exports, and the revision endpoint collaborators poll
-- `app/login`, `app/invite/[token]`: sign-in and invite pages
+- `app/api/…`: route handlers: registration and Auth.js, groups, members, trips, trip sharing and invite links, messages (streamed), comments, versions, exports, and the revision endpoint collaborators poll
+- `app/login`, `app/invite/[token]`: sign-in, and the invite page that previews a shared trip
 - `components/`: the React UI. `PlanAway.tsx` holds app state.
 - `lib/db/`: the Drizzle schema and connection (PGlite or Postgres)
 - `lib/store.ts`: all data access and permission checks

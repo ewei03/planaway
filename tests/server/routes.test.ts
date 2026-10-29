@@ -16,11 +16,15 @@ vi.mock("@/lib/agent", async (importOriginal) => ({
 import * as register from "@/app/api/register/route";
 import * as groups from "@/app/api/groups/route";
 import * as group from "@/app/api/groups/[id]/route";
-import * as invites from "@/app/api/groups/[id]/invites/route";
 import * as member from "@/app/api/groups/[id]/members/[userId]/route";
 import * as invite from "@/app/api/invites/[token]/route";
 import * as trips from "@/app/api/trips/route";
+import * as sharedTrips from "@/app/api/trips/shared/route";
 import * as trip from "@/app/api/trips/[id]/route";
+import * as tripInvites from "@/app/api/trips/[id]/invites/route";
+import * as tripInvite from "@/app/api/trips/[id]/invites/[token]/route";
+import * as tripMember from "@/app/api/trips/[id]/members/[userId]/route";
+import * as sharing from "@/app/api/trips/[id]/sharing/route";
 import * as comments from "@/app/api/trips/[id]/comments/route";
 import * as comment from "@/app/api/trips/[id]/comments/[commentId]/route";
 import * as exportRoute from "@/app/api/trips/[id]/export/route";
@@ -110,21 +114,48 @@ describe("groups API", () => {
     expect((await group.GET(req("GET", "/"), params({ id: groupId }))).status).toBe(404);
   });
 
-  it("validates invite and member roles", async () => {
-    expect((await invites.POST(req("POST", "/", { role: "owner" }), params({ id: groupId }))).status).toBe(400);
+  it("validates member roles", async () => {
     expect((await member.PATCH(req("PATCH", "/", { role: "admin" }), params({ id: groupId, userId: viewer.id }))).status).toBe(400);
   });
+});
 
-  it("runs the invite flow end to end", async () => {
-    const res = await invites.POST(req("POST", "/", { role: "editor" }), params({ id: groupId }));
-    expect(res.status).toBe(201);
-    const { token } = await res.json();
+describe("trip sharing API", () => {
+  it("validates invite roles and expiry", async () => {
+    const id = await makeTrip(owner.id, groupId);
+    const create = (json: unknown) => tripInvites.POST(req("POST", "/", json), params({ id }));
+    expect((await create({ role: "owner" })).status).toBe(400);
+    expect((await create({ role: "viewer", expiresInDays: 365 })).status).toBe(400);
+    expect((await create({ role: "viewer", expiresInDays: null })).status).toBe(201);
+    // Expiry defaults to a week.
+    const { expiresAt } = await (await create({ role: "viewer" })).json();
+    expect((new Date(expiresAt).getTime() - Date.now()) / 86_400_000).toBeCloseTo(7, 1);
+    expect((await tripMember.PATCH(req("PATCH", "/", { role: "owner" }), params({ id, userId: viewer.id }))).status).toBe(400);
+  });
+
+  it("previews without signing in, and requires signing in to join", async () => {
+    const id = await makeTrip(owner.id, groupId);
+    const { token } = await (await tripInvites.POST(req("POST", "/", { role: "editor" }), params({ id }))).json();
+
+    signIn(null);
+    expect(await (await invite.GET(req("GET", "/"), params({ token }))).json()).toMatchObject({ tripId: id, role: "editor", invitedBy: "Owner" });
+    expect((await invite.POST(req("POST", "/"), params({ token }))).status).toBe(401);
+    expect((await invite.GET(req("GET", "/"), params({ token: "bogus" }))).status).toBe(404);
+
     const joiner = await makeUser("Joiner");
     signIn(joiner);
-    expect(await (await invite.GET(req("GET", "/"), params({ token }))).json()).toEqual({ groupId, groupName: "Crew", role: "editor" });
-    expect((await invite.POST(req("POST", "/"), params({ token }))).status).toBe(200);
-    expect((await group.GET(req("GET", "/"), params({ id: groupId }))).status).toBe(200);
-    expect((await invite.GET(req("GET", "/"), params({ token: "bogus" }))).status).toBe(404);
+    expect(await (await invite.POST(req("POST", "/"), params({ token }))).json()).toEqual({ tripId: id });
+    expect((await trip.GET(req("GET", "/"), params({ id }))).status).toBe(200);
+    expect((await group.GET(req("GET", "/"), params({ id: groupId }))).status).toBe(404);
+    expect(await (await sharedTrips.GET()).json()).toMatchObject([{ id, role: "editor" }]);
+
+    // Only the sharer sees and manages who has access.
+    expect((await sharing.GET(req("GET", "/"), params({ id }))).status).toBe(403);
+    signIn(owner);
+    expect(await (await sharing.GET(req("GET", "/"), params({ id }))).json()).toMatchObject({ members: [{ id: joiner.id, role: "editor" }] });
+    expect((await tripInvite.DELETE(req("DELETE", "/"), params({ id, token }))).status).toBe(204);
+    expect((await tripMember.DELETE(req("DELETE", "/"), params({ id, userId: joiner.id }))).status).toBe(204);
+    signIn(joiner);
+    expect((await trip.GET(req("GET", "/"), params({ id }))).status).toBe(404);
   });
 });
 
@@ -140,7 +171,7 @@ describe("trips API", () => {
     expect((await trip.PATCH(req("PATCH", "/", { title: "" }), params({ id }))).status).toBe(400);
     expect((await trip.PATCH(req("PATCH", "/", { title: "Lisbon" }), params({ id }))).status).toBe(204);
     expect((await (await trip.GET(req("GET", "/"), params({ id }))).json()).title).toBe("Lisbon");
-    expect(await (await revision.GET(req("GET", "/"), params({ id }))).json()).toEqual({ revision: expect.any(Number), busy: null });
+    expect(await (await revision.GET(req("GET", "/"), params({ id }))).json()).toEqual({ revision: expect.any(Number), busy: null, viewers: [] });
     expect((await trip.DELETE(req("DELETE", "/"), params({ id }))).status).toBe(204);
     expect((await trip.GET(req("GET", "/"), params({ id }))).status).toBe(404);
   });

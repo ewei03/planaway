@@ -47,7 +47,9 @@ test("rename, save a version, and export", async ({ page }) => {
   await page.getByLabel("Trip name").press("Enter");
   await expect(page.getByRole("heading", { name: "Spring in Kyoto", level: 1 })).toBeVisible();
 
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const tripMenu = page.getByRole("button", { name: "Options for Spring in Kyoto" });
+  await tripMenu.click();
+  await page.getByRole("menuitem", { name: "Save version…" }).click();
   await page.getByRole("textbox", { name: "Name" }).fill("First draft");
   await page.getByRole("button", { name: "Save", exact: true }).last().click();
   await expect(page.locator(".toast")).toHaveText('Saved "First draft"');
@@ -57,7 +59,8 @@ test("rename, save a version, and export", async ({ page }) => {
     ["Spreadsheet (.csv)", "kyoto-food-weekend.csv"],
     ["Calendar (.ics)", "kyoto-food-weekend.ics"],
   ] as const) {
-    await page.getByRole("button", { name: "Export ▾" }).click();
+    await tripMenu.click();
+    await page.getByRole("menuitem", { name: /Export as/ }).hover();
     const download = page.waitForEvent("download");
     await page.getByRole("menuitem", { name: item }).click();
     const d = await download;
@@ -89,7 +92,8 @@ test("comment on an item, reply, and resolve", async ({ page }) => {
 
 test("delete a trip", async ({ page }) => {
   await planTrip(page);
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Options for Kyoto Food Weekend" }).click();
+  await page.getByRole("menuitem", { name: "Delete trip…" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(page.locator(".toast")).toHaveText("Trip deleted");
   await expect(page.getByRole("heading", { name: "Where to next?" })).toBeVisible();

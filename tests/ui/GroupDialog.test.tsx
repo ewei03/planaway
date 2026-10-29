@@ -15,7 +15,6 @@ const detail = (overrides: Partial<GroupDetail> = {}): GroupDetail => ({
     { ...me, role: "owner" },
     { ...sam, email: "sam@example.com", role: "editor" },
   ],
-  invites: [{ token: "tok123", role: "viewer", expiresAt: "2026-11-04T00:00:00Z" }],
   ...overrides,
 });
 
@@ -31,22 +30,57 @@ function setup(group: GroupDetail, respond?: (url: string, init?: RequestInit) =
 }
 
 describe("GroupDialog", () => {
-  it("lets owners manage members and invites", async () => {
+  it("lets owners manage members", async () => {
     setup(detail());
     expect(await screen.findByRole("heading", { name: "Ski crew" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Role for Sam" })).toHaveValue("editor");
     expect(screen.getByRole("button", { name: "Remove Sam" })).toBeInTheDocument();
     // Owners can't remove themselves from here (they leave instead).
     expect(screen.queryByRole("button", { name: "Remove Maya" })).toBeNull();
-    expect(screen.getByRole("textbox", { name: "Invite link" })).toHaveValue(`${location.origin}/invite/tok123`);
+    // Sharing is per trip now; the group dialog only points there.
+    expect(screen.queryByRole("button", { name: /invite/i })).toBeNull();
+    expect(screen.getByText(/choose Share… in the trip's ⋯ menu/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete group" })).toBeInTheDocument();
   });
 
+  it("doesn't let owners change their own role", async () => {
+    setup(detail());
+    await screen.findByRole("heading", { name: "Ski crew" });
+    expect(screen.queryByRole("combobox", { name: "Role for Maya" })).toBeNull();
+    const myRow = screen.getByText("(you)").closest("li")!;
+    expect(within(myRow).getByText("owner")).toHaveClass("role-badge");
+  });
+
+  it("transfers ownership after confirming", async () => {
+    const { fetch, onChanged } = setup(detail());
+    const transfer = await screen.findByRole("button", { name: "Transfer" });
+    expect(transfer).toBeDisabled();
+    // Only other members can be picked.
+    const picker = screen.getByRole("combobox", { name: "New owner" });
+    expect(within(picker).getAllByRole("option").map((o) => o.textContent)).toEqual(["Choose a member…", "Sam"]);
+
+    await userEvent.selectOptions(picker, sam.id);
+    await userEvent.click(transfer);
+    const confirm = screen.getAllByRole("dialog").at(-1)!;
+    expect(within(confirm).getByText(/you'll become an editor/)).toBeInTheDocument();
+    await userEvent.click(within(confirm).getByRole("button", { name: "Transfer" }));
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
+    const call = fetch.mock.calls.find(([url]) => url === "/api/groups/g1/transfer")!;
+    expect(call[1]!.method).toBe("POST");
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ userId: sam.id });
+  });
+
+  it("hides the transfer control when there's nobody to transfer to", async () => {
+    setup(detail({ members: [{ ...me, role: "owner" }] }));
+    await screen.findByRole("heading", { name: "Ski crew" });
+    expect(screen.queryByRole("heading", { name: "Transfer ownership" })).toBeNull();
+  });
+
   it("shows a read-only view to non-owners", async () => {
-    setup(detail({ role: "editor", invites: [] }));
+    setup(detail({ role: "editor" }));
     await screen.findByRole("heading", { name: "Ski crew" });
     expect(screen.queryByRole("combobox", { name: /Role for/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Create invite link" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Transfer ownership" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete group" })).toBeNull();
     expect(screen.getByRole("button", { name: "Leave group" })).toBeInTheDocument();
   });
@@ -58,17 +92,6 @@ describe("GroupDialog", () => {
     expect(call[0]).toBe(`/api/groups/g1/members/${sam.id}`);
     expect(JSON.parse(call[1]!.body as string)).toEqual({ role: "viewer" });
     expect(onChanged).toHaveBeenCalled();
-  });
-
-  it("creates an invite at the chosen role and copies it", async () => {
-    const writeText = vi.fn(async () => {});
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-    const { fetch } = setup(detail(), (url, init) => (init?.method === "POST" ? { token: "new-token" } : undefined));
-    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Invite role" }), "viewer");
-    await userEvent.click(screen.getByRole("button", { name: "Create invite link" }));
-    const call = fetch.mock.calls.find(([, init]) => init?.method === "POST")!;
-    expect(JSON.parse(call[1]!.body as string)).toEqual({ role: "viewer" });
-    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(`${location.origin}/invite/new-token`));
   });
 
   it("confirms before leaving, then reports the group is gone", async () => {

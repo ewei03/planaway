@@ -51,6 +51,60 @@ describe("ItineraryView", () => {
     expect(screen.getByText("Todai-ji")).toBeInTheDocument();
   });
 
+  it("boxes tips as a numbered list, and sources as links with their site", () => {
+    const it = sampleItinerary();
+    it.tips = ["Get an ICOCA card.", "Book temples early."];
+    it.sources = [
+      { title: "Kyoto travel guide", url: "https://www.example.com/guide" },
+      { title: "Sketchy", url: "javascript:alert(1)" },
+    ];
+    setup(undefined, it);
+    const tips = screen.getByRole("heading", { name: "Tips" }).closest("section")!;
+    expect(within(tips).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Get an ICOCA card.", "Book temples early."]);
+
+    const sources = screen.getByRole("heading", { name: "Sources" }).closest("section")!;
+    expect(within(sources).getByText("2")).toHaveClass("info-box-count");
+    const guide = within(sources).getByRole("link", { name: /Kyoto travel guide/ });
+    expect(guide).toHaveAttribute("href", "https://www.example.com/guide");
+    expect(guide).toHaveAttribute("target", "_blank");
+    expect(guide).toHaveAttribute("rel", "noopener noreferrer");
+    expect(guide).toHaveTextContent("example.com");
+    // Unsafe URLs are shown, but never linked.
+    expect(within(sources).queryByRole("link", { name: /Sketchy/ })).toBeNull();
+    expect(within(sources).getByText("Sketchy")).toBeInTheDocument();
+  });
+
+  it("collapses each box as a whole, starting with tips open and sources closed", async () => {
+    localStorage.clear();
+    setup();
+    const tipsToggle = screen.getByRole("button", { name: "Tips" });
+    const sourcesToggle = screen.getByRole("button", { name: /^Sources/ });
+    expect(tipsToggle).toHaveAttribute("aria-expanded", "true");
+    expect(sourcesToggle).toHaveAttribute("aria-expanded", "false");
+    // Collapsed content is inert, so its links can't be tabbed to.
+    expect(document.getElementById(sourcesToggle.getAttribute("aria-controls")!)).toHaveAttribute("inert");
+
+    await userEvent.click(sourcesToggle);
+    expect(sourcesToggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById(sourcesToggle.getAttribute("aria-controls")!)).not.toHaveAttribute("inert");
+    await userEvent.click(tipsToggle);
+    expect(tipsToggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("remembers which boxes were open", async () => {
+    localStorage.clear();
+    const { unmount } = render(
+      <ItineraryView itinerary={sampleItinerary()} counts={new Map()} onComment={vi.fn()} lookup={fullLookup()} map={null} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Tips" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Sources/ }));
+    unmount();
+    setup();
+    expect(screen.getByRole("button", { name: "Tips" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: /^Sources/ })).toHaveAttribute("aria-expanded", "true");
+    localStorage.clear();
+  });
+
   it("opens a comment anchor for the clicked item", async () => {
     const { onComment } = setup();
     await userEvent.click(screen.getByRole("button", { name: "Comment on Day 1 · Nishiki Market" }));

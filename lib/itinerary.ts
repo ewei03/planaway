@@ -89,7 +89,12 @@ export const Itinerary = z.object({
   flights: z.array(Flight),
   lodging: z.array(Lodging),
   days: z.array(Day),
-  tips: z.array(z.string()),
+  tips: z
+    .array(z.string())
+    .describe(
+      "Practical tips, one or two sentences each. Wrap the one key phrase of each tip in **double asterisks**, " +
+        'e.g. "Buy a **72-hour transit pass** at the airport." Use no other formatting.',
+    ),
   sources: z.array(z.object({ title: z.string(), url: z.string() })),
 });
 

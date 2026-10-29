@@ -4,35 +4,33 @@ import { useEffect, useMemo, useState } from "react";
 import {
   anchorKey,
   canEdit,
-  downloadExport,
+  EXPORT_FORMATS,
   formatDateTime,
   type CommentAnchor,
   type ExportFormat,
   type Itinerary,
   type SessionUser,
   type TripView,
+  type UserRef,
 } from "./client";
 import { CommentsPanel } from "./CommentsPanel";
 import { ItineraryView } from "./ItineraryView";
 import { usePlaces } from "./places";
 import { TripMap } from "./TripMap";
-
-const FORMATS: [ExportFormat, string][] = [
-  ["csv", "Spreadsheet (.csv)"],
-  ["md", "Document (.md)"],
-  ["ics", "Calendar (.ics)"],
-  ["json", "Data (.json)"],
-];
+import { Viewers } from "./Viewers";
 
 interface Props {
   trip: TripView;
   user: SessionUser;
   /** "current" or a saved version id */
   viewing: string;
+  /** Other people with this trip open right now. */
+  viewers?: UserRef[];
   working: boolean;
   onView: (viewing: string) => void;
   onSaveVersion: () => void;
-  onDelete: () => void;
+  /** Exports the version on screen. */
+  onExport: (format: ExportFormat) => void;
   onBack: () => void;
   onChanged: () => void;
   onAskAgent: () => void;
@@ -40,17 +38,22 @@ interface Props {
 }
 
 export function ItineraryPane(props: Props) {
-  const { trip, user, viewing, working, onView, onSaveVersion, onDelete, onBack, onChanged, onAskAgent, onError } = props;
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { trip, user, viewing, viewers = [], working, onView, onSaveVersion, onExport, onBack, onChanged, onAskAgent, onError } = props;
+  const [exportOpen, setExportOpen] = useState(false);
   // undefined: panel closed; null: all comments; otherwise one item's threads.
   const [commentAnchor, setCommentAnchor] = useState<CommentAnchor | null | undefined>(undefined);
 
   useEffect(() => {
-    if (!menuOpen) return;
-    const close = () => setMenuOpen(false);
+    if (!exportOpen) return;
+    const close = () => setExportOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [menuOpen]);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [exportOpen]);
 
   // Close the comments panel when switching trips.
   useEffect(() => setCommentAnchor(undefined), [trip.id]);
@@ -70,11 +73,6 @@ export function ItineraryPane(props: Props) {
   }, [trip.comments]);
   const openCount = [...counts.values()].reduce((a, b) => a + b, 0);
 
-  const exportAs = (format: ExportFormat) => {
-    setMenuOpen(false);
-    downloadExport(trip.id, format, viewing === "current" ? null : viewing).catch((err: Error) => onError(err.message));
-  };
-
   return (
     <div className="itinerary-pane">
       <div className="pane-toolbar">
@@ -90,6 +88,7 @@ export function ItineraryPane(props: Props) {
           ))}
         </select>
         <div className="toolbar-actions">
+          <Viewers viewers={viewers} />
           <button
             className={`btn ${commentAnchor !== undefined ? "pressed" : ""}`}
             onClick={() => setCommentAnchor(commentAnchor === undefined ? null : undefined)}
@@ -97,38 +96,45 @@ export function ItineraryPane(props: Props) {
             💬{openCount > 0 ? ` ${openCount}` : ""}
           </button>
           {canEdit(trip.role) && (
-            <button className="btn" disabled={!trip.itinerary || viewing !== "current"} onClick={onSaveVersion}>
+            <button
+              className="btn"
+              title={viewing === "current" ? "Save a snapshot of the current draft" : "Switch to the current draft to save it"}
+              disabled={!trip.itinerary || viewing !== "current"}
+              onClick={onSaveVersion}
+            >
               Save
             </button>
           )}
           <div className="menu">
             <button
               className="btn"
-              aria-haspopup="true"
-              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
               disabled={!itinerary}
               onClick={(e) => {
                 e.stopPropagation();
-                setMenuOpen((o) => !o);
+                setExportOpen((o) => !o);
               }}
             >
               Export ▾
             </button>
-            {menuOpen && (
-              <div className="menu-list" role="menu">
-                {FORMATS.map(([format, label]) => (
-                  <button key={format} role="menuitem" onClick={() => exportAs(format)}>
+            {exportOpen && (
+              <div className="menu-list" role="menu" aria-label="Export as">
+                {EXPORT_FORMATS.map(([format, label]) => (
+                  <button
+                    key={format}
+                    role="menuitem"
+                    onClick={() => {
+                      setExportOpen(false);
+                      onExport(format);
+                    }}
+                  >
                     {label}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          {trip.canDelete && (
-            <button className="btn danger-text" title="Delete trip" onClick={onDelete}>
-              Delete
-            </button>
-          )}
         </div>
       </div>
       <div className="pane-body">

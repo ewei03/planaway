@@ -54,19 +54,6 @@ export const groupMembers = pgTable(
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index("group_members_user_idx").on(t.userId)],
 );
 
-export const groupInvites = pgTable(
-  "group_invites",
-  {
-    token: text("token").primaryKey(),
-    groupId: uuid("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
-    role: roleEnum("role").notNull(),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => [index("group_invites_group_idx").on(t.groupId)],
-);
-
 export const trips = pgTable(
   "trips",
   {
@@ -87,6 +74,49 @@ export const trips = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("trips_group_idx").on(t.groupId)],
+);
+
+/**
+ * People one trip was shared with through an invite link. They see that trip
+ * only, not the rest of its group. Role is editor or viewer, never owner.
+ */
+export const tripMembers = pgTable(
+  "trip_members",
+  {
+    tripId: uuid("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: roleEnum("role").notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.tripId, t.userId] }), index("trip_members_user_idx").on(t.userId)],
+);
+
+/**
+ * Who has a trip open. Open tabs touch seen_at each time they poll for
+ * changes; anyone seen in the last few seconds counts as viewing.
+ */
+export const tripPresence = pgTable(
+  "trip_presence",
+  {
+    tripId: uuid("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.tripId, t.userId] })],
+);
+
+/** An invite link to one trip. expires_at null means it lasts until revoked. */
+export const tripInvites = pgTable(
+  "trip_invites",
+  {
+    token: text("token").primaryKey(),
+    tripId: uuid("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+    role: roleEnum("role").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("trip_invites_trip_idx").on(t.tripId)],
 );
 
 /** The raw API transcript. Append-only: one row per message, in order. */

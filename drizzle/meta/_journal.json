@@ -22,6 +22,27 @@
       "when": 1793245814141,
       "tag": "0002_free_maps",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793301309670,
+      "tag": "0003_trip_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793301317110,
+      "tag": "0004_drop_group_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793303177755,
+      "tag": "0005_trip_presence",
+      "breakpoints": true
     }
   ]
 }

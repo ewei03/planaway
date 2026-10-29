@@ -24,8 +24,21 @@ export function requireRole(role: Role, min: Role, action: string): void {
   if (RANK[role] < RANK[min]) throw new ForbiddenError(`You need ${min} access to ${action}.`);
 }
 
+/**
+ * Who can delete a trip and decide who it's shared with: its group's owners
+ * and its creator. Both need to be in the group; people a trip was shared
+ * with (groupRole null) never can.
+ */
+function canManage(groupRole: Role | null, createdBy: string | null, userId: string): boolean {
+  return groupRole === "owner" || (groupRole !== null && createdBy === userId);
+}
+
 /** A lock older than this is from a crashed process and can be taken over. */
 const TURN_LOCK_MS = 15 * 60 * 1000;
+
+/** Someone counts as viewing a trip if their tab polled this recently. Tabs
+ *  poll every 4 seconds, so one late poll doesn't make them blink out. */
+const PRESENCE_MS = 10_000;
 
 // ---------- Shapes the API returns ----------
 
@@ -40,6 +53,16 @@ export interface TripSummary {
   title: string;
   destinations: string[];
   updatedAt: string;
+  hasItinerary: boolean;
+  canDelete: boolean;
+  /** Group owners and the trip's creator can share it and delete it. */
+  canShare: boolean;
+}
+
+/** A trip someone shared with the user, outside any group they're in. */
+export interface SharedTripSummary extends TripSummary {
+  role: Role;
+  sharedBy: string;
 }
 
 export interface GroupSummary {
@@ -57,8 +80,26 @@ export interface GroupDetail {
   personal: boolean;
   role: Role;
   members: (UserRef & { email: string; role: Role })[];
-  /** Only owners see invites. */
-  invites: { token: string; role: Role; expiresAt: string }[];
+}
+
+/** Who a trip is shared with. Only people who can share the trip see this. */
+export interface TripSharing {
+  invites: { token: string; role: Role; expiresAt: string | null }[];
+  members: (UserRef & { email: string; role: Role })[];
+}
+
+/** What an invite link shows before anyone signs in. */
+export interface InvitePreview {
+  tripId: string;
+  title: string;
+  summary: string | null;
+  destinations: string[];
+  startDate: string | null;
+  endDate: string | null;
+  days: number;
+  role: Role;
+  invitedBy: string | null;
+  expiresAt: string | null;
 }
 
 export interface ChatEntry {
@@ -99,6 +140,10 @@ export interface TripView {
   role: Role;
   /** Group owners and the trip's creator can delete it. */
   canDelete: boolean;
+  /** Same rule as canDelete. */
+  canShare: boolean;
+  /** Set when the user has this trip through an invite rather than its group. */
+  sharedBy: UserRef | null;
   revision: number;
   itinerary: Itinerary | null;
   chat: ChatEntry[];
@@ -174,6 +219,8 @@ export async function listGroups(userId: string): Promise<GroupSummary[]> {
         title: s.trips.title,
         destinations: s.trips.destinations,
         updatedAt: s.trips.updatedAt,
+        createdBy: s.trips.createdBy,
+        hasItinerary: sql<boolean>`${s.trips.itinerary} is not null`,
       })
       .from(s.trips)
       .where(inArray(s.trips.groupId, ids))
@@ -187,7 +234,14 @@ export async function listGroups(userId: string): Promise<GroupSummary[]> {
   return rows.map((g) => ({
     ...g,
     memberCount: counts.find((c) => c.groupId === g.id)?.n ?? 1,
-    trips: trips.filter((t) => t.groupId === g.id).map((t) => ({ ...t, updatedAt: t.updatedAt.toISOString() })),
+    trips: trips
+      .filter((t) => t.groupId === g.id)
+      .map(({ createdBy, ...t }) => ({
+        ...t,
+        updatedAt: t.updatedAt.toISOString(),
+        canDelete: canManage(g.role, createdBy, userId),
+        canShare: canManage(g.role, createdBy, userId),
+      })),
   }));
 }
 
@@ -210,22 +264,7 @@ export async function getGroup(userId: string, groupId: string): Promise<GroupDe
     .innerJoin(s.users, eq(s.users.id, s.groupMembers.userId))
     .where(eq(s.groupMembers.groupId, groupId))
     .orderBy(asc(s.groupMembers.joinedAt));
-  const invites =
-    role === "owner"
-      ? await db
-          .select({ token: s.groupInvites.token, role: s.groupInvites.role, expiresAt: s.groupInvites.expiresAt })
-          .from(s.groupInvites)
-          .where(and(eq(s.groupInvites.groupId, groupId), gt(s.groupInvites.expiresAt, new Date())))
-          .orderBy(desc(s.groupInvites.createdAt))
-      : [];
-  return {
-    id: group.id,
-    name: group.name,
-    personal: group.personal,
-    role,
-    members,
-    invites: invites.map((i) => ({ ...i, expiresAt: i.expiresAt.toISOString() })),
-  };
+  return { id: group.id, name: group.name, personal: group.personal, role, members };
 }
 
 export async function renameGroup(userId: string, groupId: string, name: string): Promise<void> {
@@ -242,50 +281,6 @@ export async function deleteGroup(userId: string, groupId: string): Promise<void
   await db.delete(s.groups).where(eq(s.groups.id, groupId));
 }
 
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-export async function createInvite(userId: string, groupId: string, role: Role): Promise<{ token: string; expiresAt: string }> {
-  const db = await getDb();
-  requireRole(await groupRole(db, groupId, userId), "owner", "invite people");
-  const [group] = await db.select({ personal: s.groups.personal }).from(s.groups).where(eq(s.groups.id, groupId));
-  if (group.personal) throw new ForbiddenError("Create a group to plan with others; your personal group is just for you.");
-  const token = randomBytes(24).toString("base64url");
-  const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
-  await db.insert(s.groupInvites).values({ token, groupId, role, createdBy: userId, expiresAt });
-  return { token, expiresAt: expiresAt.toISOString() };
-}
-
-export async function revokeInvite(userId: string, groupId: string, token: string): Promise<void> {
-  const db = await getDb();
-  requireRole(await groupRole(db, groupId, userId), "owner", "manage invites");
-  await db.delete(s.groupInvites).where(and(eq(s.groupInvites.token, token), eq(s.groupInvites.groupId, groupId)));
-}
-
-async function liveInvite(db: Db, token: string) {
-  const [invite] = await db
-    .select({ groupId: s.groupInvites.groupId, role: s.groupInvites.role, groupName: s.groups.name })
-    .from(s.groupInvites)
-    .innerJoin(s.groups, eq(s.groups.id, s.groupInvites.groupId))
-    .where(and(eq(s.groupInvites.token, token), gt(s.groupInvites.expiresAt, new Date())));
-  if (!invite) throw new NotFoundError("This invite link is invalid or has expired.");
-  return invite;
-}
-
-export async function getInvite(token: string): Promise<{ groupId: string; groupName: string; role: Role }> {
-  return liveInvite(await getDb(), token);
-}
-
-/** Joins the group. Existing members keep their current role. */
-export async function acceptInvite(userId: string, token: string): Promise<{ groupId: string }> {
-  const db = await getDb();
-  const invite = await liveInvite(db, token);
-  await db
-    .insert(s.groupMembers)
-    .values({ groupId: invite.groupId, userId, role: invite.role })
-    .onConflictDoNothing();
-  return { groupId: invite.groupId };
-}
-
 async function ownerCount(db: Db, groupId: string): Promise<number> {
   const [{ n }] = await db
     .select({ n: count() })
@@ -294,9 +289,13 @@ async function ownerCount(db: Db, groupId: string): Promise<number> {
   return n;
 }
 
+/** Owners change other members' roles. Nobody changes their own; owners hand over with transferOwnership. */
 export async function setMemberRole(userId: string, groupId: string, memberId: string, role: Role): Promise<void> {
   const db = await getDb();
   requireRole(await groupRole(db, groupId, userId), "owner", "change roles");
+  if (memberId === userId) {
+    throw new ForbiddenError("You can't change your own role. To hand the group over, transfer ownership to another member.");
+  }
   const current = await groupRole(db, groupId, memberId);
   if (current === "owner" && role !== "owner" && (await ownerCount(db, groupId)) === 1) {
     throw new ForbiddenError("A group needs at least one owner. Make someone else an owner first.");
@@ -305,6 +304,22 @@ export async function setMemberRole(userId: string, groupId: string, memberId: s
     .update(s.groupMembers)
     .set({ role })
     .where(and(eq(s.groupMembers.groupId, groupId), eq(s.groupMembers.userId, memberId)));
+}
+
+/** Makes another member the owner, and the current owner an editor, in one step. */
+export async function transferOwnership(userId: string, groupId: string, newOwnerId: string): Promise<void> {
+  const db = await getDb();
+  requireRole(await groupRole(db, groupId, userId), "owner", "transfer ownership");
+  if (newOwnerId === userId) throw new ConflictError("You're already an owner of this group.");
+  const [group] = await db.select({ personal: s.groups.personal }).from(s.groups).where(eq(s.groups.id, groupId));
+  if (group.personal) throw new ForbiddenError("Your personal group can't be transferred.");
+  // Throws NotFound if they're not a member.
+  await groupRole(db, groupId, newOwnerId);
+  await db.transaction(async (tx) => {
+    const member = (id: string) => and(eq(s.groupMembers.groupId, groupId), eq(s.groupMembers.userId, id));
+    await tx.update(s.groupMembers).set({ role: "owner" }).where(member(newOwnerId));
+    await tx.update(s.groupMembers).set({ role: "editor" }).where(member(userId));
+  });
 }
 
 /** Owners can remove anyone; anyone can remove themselves (leave). */
@@ -316,7 +331,7 @@ export async function removeMember(userId: string, groupId: string, memberId: st
   if (group.personal) throw new ForbiddenError("You can't leave your personal group.");
   const memberRole = await groupRole(db, groupId, memberId);
   if (memberRole === "owner" && (await ownerCount(db, groupId)) === 1) {
-    throw new ForbiddenError("A group needs at least one owner. Make someone else an owner first.");
+    throw new ForbiddenError("A group needs at least one owner. Transfer ownership to another member first.");
   }
   await db
     .delete(s.groupMembers)
@@ -325,18 +340,34 @@ export async function removeMember(userId: string, groupId: string, memberId: st
 
 // ---------- Trips ----------
 
-/** Loads a trip and the user's role in its group. Non-members get NotFound. */
+/**
+ * Loads a trip and the user's role on it: from its group, or from an invite
+ * to this one trip, whichever is higher. Anyone with neither gets NotFound,
+ * so trip ids don't leak.
+ */
 export async function tripAccess(userId: string, tripId: string) {
   if (!/^[0-9a-f-]{36}$/i.test(tripId)) throw new NotFoundError("Trip not found");
   const db = await getDb();
   const [row] = await db
-    .select({ trip: s.trips, role: s.groupMembers.role, groupName: s.groups.name })
+    .select({ trip: s.trips, groupRole: s.groupMembers.role, tripRole: s.tripMembers.role, groupName: s.groups.name })
     .from(s.trips)
     .innerJoin(s.groups, eq(s.groups.id, s.trips.groupId))
-    .innerJoin(s.groupMembers, and(eq(s.groupMembers.groupId, s.trips.groupId), eq(s.groupMembers.userId, userId)))
+    .leftJoin(s.groupMembers, and(eq(s.groupMembers.groupId, s.trips.groupId), eq(s.groupMembers.userId, userId)))
+    .leftJoin(s.tripMembers, and(eq(s.tripMembers.tripId, s.trips.id), eq(s.tripMembers.userId, userId)))
     .where(eq(s.trips.id, tripId));
-  if (!row) throw new NotFoundError("Trip not found");
-  return { db, ...row };
+  const roles = [row?.groupRole, row?.tripRole].filter((r): r is Role => Boolean(r));
+  if (!row || roles.length === 0) throw new NotFoundError("Trip not found");
+  const role = roles.reduce((a, b) => (RANK[b] > RANK[a] ? b : a));
+  return { db, trip: row.trip, role, groupRole: row.groupRole, groupName: row.groupName };
+}
+
+/** tripAccess for changing who a trip is shared with. */
+async function manageAccess(userId: string, tripId: string) {
+  const access = await tripAccess(userId, tripId);
+  if (!canManage(access.groupRole, access.trip.createdBy, userId)) {
+    throw new ForbiddenError("Only the trip's creator or a group owner can share it.");
+  }
+  return access;
 }
 
 function bump(db: Db, tripId: string) {
@@ -358,8 +389,8 @@ export async function createTrip(userId: string, groupId: string): Promise<{ id:
 }
 
 export async function getTripView(userId: string, tripId: string): Promise<TripView> {
-  const { db, trip, role, groupName } = await tripAccess(userId, tripId);
-  const [chat, versions, comments, busyUser] = await Promise.all([
+  const { db, trip, role, groupRole, groupName } = await tripAccess(userId, tripId);
+  const [chat, versions, comments, busyUser, creator] = await Promise.all([
     db
       .select({ c: s.tripChat, authorName: s.users.name })
       .from(s.tripChat)
@@ -371,6 +402,9 @@ export async function getTripView(userId: string, tripId: string): Promise<TripV
     lockIsLive(trip.turnStartedAt) && trip.turnUserId
       ? db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.id, trip.turnUserId))
       : Promise.resolve([]),
+    groupRole === null && trip.createdBy
+      ? db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.id, trip.createdBy))
+      : Promise.resolve([]),
   ]);
   return {
     id: trip.id,
@@ -378,7 +412,9 @@ export async function getTripView(userId: string, tripId: string): Promise<TripV
     groupName,
     title: trip.title,
     role,
-    canDelete: role === "owner" || trip.createdBy === userId,
+    canDelete: canManage(groupRole, trip.createdBy, userId),
+    canShare: canManage(groupRole, trip.createdBy, userId),
+    sharedBy: groupRole === null ? (creator[0] ?? { id: "", name: "Former member" }) : null,
     revision: trip.revision,
     itinerary: trip.itinerary,
     chat: chat.map(({ c, authorName }) => ({
@@ -402,13 +438,26 @@ export async function getTripView(userId: string, tripId: string): Promise<TripV
 }
 
 /** Cheap check collaborators poll to learn whether to refetch. */
-export async function getTripRevision(userId: string, tripId: string) {
+export async function getTripRevision(userId: string, tripId: string): Promise<{ revision: number; busy: UserRef | null; viewers: UserRef[] }> {
   const { db, trip } = await tripAccess(userId, tripId);
   let busy: UserRef | null = null;
   if (lockIsLive(trip.turnStartedAt) && trip.turnUserId) {
     [busy] = await db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.id, trip.turnUserId));
   }
-  return { revision: trip.revision, busy: busy ?? null };
+  // Polling doubles as a heartbeat: record this user, then list who else is here.
+  await db
+    .insert(s.tripPresence)
+    .values({ tripId, userId, seenAt: new Date() })
+    .onConflictDoUpdate({ target: [s.tripPresence.tripId, s.tripPresence.userId], set: { seenAt: new Date() } });
+  const viewers = await db
+    .select({ id: s.users.id, name: s.users.name })
+    .from(s.tripPresence)
+    .innerJoin(s.users, eq(s.users.id, s.tripPresence.userId))
+    .where(and(eq(s.tripPresence.tripId, tripId), gt(s.tripPresence.seenAt, new Date(Date.now() - PRESENCE_MS))))
+    .orderBy(asc(s.users.name));
+  // A tab streaming its own turn stops polling, but its user is still here.
+  if (busy && !viewers.some((v) => v.id === busy.id)) viewers.push(busy);
+  return { revision: trip.revision, busy: busy ?? null, viewers: viewers.filter((v) => v.id !== userId) };
 }
 
 export async function renameTrip(userId: string, tripId: string, title: string): Promise<void> {
@@ -420,8 +469,8 @@ export async function renameTrip(userId: string, tripId: string, title: string):
 
 /** Group owners and the trip's creator can delete it. */
 export async function deleteTrip(userId: string, tripId: string): Promise<void> {
-  const { db, trip, role } = await tripAccess(userId, tripId);
-  if (role !== "owner" && trip.createdBy !== userId) {
+  const { db, trip, groupRole } = await tripAccess(userId, tripId);
+  if (!canManage(groupRole, trip.createdBy, userId)) {
     throw new ForbiddenError("Only the trip's creator or a group owner can delete it.");
   }
   if (lockIsLive(trip.turnStartedAt)) throw new ConflictError("The agent is still working on this trip.");
@@ -449,6 +498,150 @@ export async function getItineraryForExport(userId: string, tripId: string, vers
     .from(s.tripVersions)
     .where(and(eq(s.tripVersions.id, versionId), eq(s.tripVersions.tripId, tripId)));
   return v?.itinerary ?? null;
+}
+
+// ---------- Sharing one trip ----------
+
+/** How long a new invite link lasts. null: until revoked. */
+export const INVITE_EXPIRY_DAYS = [1, 7, 30, null] as const;
+export type InviteExpiry = (typeof INVITE_EXPIRY_DAYS)[number];
+export type InviteRole = Exclude<Role, "owner">;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const inviteIsLive = () => or(isNull(s.tripInvites.expiresAt), gt(s.tripInvites.expiresAt, new Date()));
+
+export async function createTripInvite(
+  userId: string,
+  tripId: string,
+  role: InviteRole,
+  expiresInDays: InviteExpiry,
+): Promise<{ token: string; expiresAt: string | null }> {
+  const { db } = await manageAccess(userId, tripId);
+  // 192 random bits: unguessable, and the link is the only secret.
+  const token = randomBytes(24).toString("base64url");
+  const expiresAt = expiresInDays === null ? null : new Date(Date.now() + expiresInDays * DAY_MS);
+  await db.insert(s.tripInvites).values({ token, tripId, role, createdBy: userId, expiresAt });
+  return { token, expiresAt: iso(expiresAt) };
+}
+
+export async function getTripSharing(userId: string, tripId: string): Promise<TripSharing> {
+  const { db } = await manageAccess(userId, tripId);
+  const [invites, members] = await Promise.all([
+    db
+      .select({ token: s.tripInvites.token, role: s.tripInvites.role, expiresAt: s.tripInvites.expiresAt })
+      .from(s.tripInvites)
+      .where(and(eq(s.tripInvites.tripId, tripId), inviteIsLive()))
+      .orderBy(desc(s.tripInvites.createdAt)),
+    db
+      .select({ id: s.users.id, name: s.users.name, email: s.users.email, role: s.tripMembers.role })
+      .from(s.tripMembers)
+      .innerJoin(s.users, eq(s.users.id, s.tripMembers.userId))
+      .where(eq(s.tripMembers.tripId, tripId))
+      .orderBy(asc(s.tripMembers.joinedAt)),
+  ]);
+  return { invites: invites.map((i) => ({ ...i, expiresAt: iso(i.expiresAt) })), members };
+}
+
+export async function revokeTripInvite(userId: string, tripId: string, token: string): Promise<void> {
+  const { db } = await manageAccess(userId, tripId);
+  await db.delete(s.tripInvites).where(and(eq(s.tripInvites.token, token), eq(s.tripInvites.tripId, tripId)));
+}
+
+export async function setTripMemberRole(userId: string, tripId: string, memberId: string, role: InviteRole): Promise<void> {
+  const { db } = await manageAccess(userId, tripId);
+  const updated = await db
+    .update(s.tripMembers)
+    .set({ role })
+    .where(and(eq(s.tripMembers.tripId, tripId), eq(s.tripMembers.userId, memberId)))
+    .returning({ userId: s.tripMembers.userId });
+  if (updated.length === 0) throw new NotFoundError("That person doesn't have access to this trip.");
+}
+
+/** People who can share the trip can remove anyone; anyone can remove themselves (leave). */
+export async function removeTripMember(userId: string, tripId: string, memberId: string): Promise<void> {
+  const { db } = memberId === userId ? await tripAccess(userId, tripId) : await manageAccess(userId, tripId);
+  await db.delete(s.tripMembers).where(and(eq(s.tripMembers.tripId, tripId), eq(s.tripMembers.userId, memberId)));
+}
+
+async function liveTripInvite(db: Db, token: string) {
+  const [row] = await db
+    .select({ invite: s.tripInvites, trip: s.trips, invitedBy: s.users.name })
+    .from(s.tripInvites)
+    .innerJoin(s.trips, eq(s.trips.id, s.tripInvites.tripId))
+    .leftJoin(s.users, eq(s.users.id, s.tripInvites.createdBy))
+    .where(and(eq(s.tripInvites.token, token), inviteIsLive()));
+  if (!row) throw new NotFoundError("This invite link is invalid or has expired.");
+  return row;
+}
+
+/** What the invite page shows. Needs no sign-in: holding the link is the permission. */
+export async function getInvitePreview(token: string): Promise<InvitePreview> {
+  const { invite, trip, invitedBy } = await liveTripInvite(await getDb(), token);
+  const it = trip.itinerary;
+  return {
+    tripId: trip.id,
+    title: trip.title,
+    summary: it?.summary ?? null,
+    destinations: it?.destinations ?? trip.destinations,
+    startDate: it?.start_date ?? null,
+    endDate: it?.end_date ?? null,
+    days: it?.days.length ?? 0,
+    role: invite.role,
+    invitedBy,
+    expiresAt: iso(invite.expiresAt),
+  };
+}
+
+/**
+ * Gives the user access to the invite's one trip. People who already have it
+ * through the trip's group are left as they are; people who were shared it
+ * before keep the higher of their old role and the invite's.
+ */
+export async function acceptTripInvite(userId: string, token: string): Promise<{ tripId: string }> {
+  const db = await getDb();
+  const { invite, trip } = await liveTripInvite(db, token);
+  const [inGroup] = await db
+    .select({ role: s.groupMembers.role })
+    .from(s.groupMembers)
+    .where(and(eq(s.groupMembers.groupId, trip.groupId), eq(s.groupMembers.userId, userId)));
+  if (!inGroup) {
+    const insert = db.insert(s.tripMembers).values({ tripId: trip.id, userId, role: invite.role });
+    // An editor link upgrades a viewer; a viewer link never downgrades an editor.
+    await (invite.role === "editor"
+      ? insert.onConflictDoUpdate({ target: [s.tripMembers.tripId, s.tripMembers.userId], set: { role: "editor" } })
+      : insert.onConflictDoNothing());
+  }
+  return { tripId: trip.id };
+}
+
+/** Trips shared with the user one at a time, newest activity first. */
+export async function listSharedTrips(userId: string): Promise<SharedTripSummary[]> {
+  const db = await getDb();
+  const rows = await db
+    .select({
+      id: s.trips.id,
+      groupId: s.trips.groupId,
+      title: s.trips.title,
+      destinations: s.trips.destinations,
+      updatedAt: s.trips.updatedAt,
+      hasItinerary: sql<boolean>`${s.trips.itinerary} is not null`,
+      role: s.tripMembers.role,
+      sharedBy: s.users.name,
+    })
+    .from(s.tripMembers)
+    .innerJoin(s.trips, eq(s.trips.id, s.tripMembers.tripId))
+    .leftJoin(s.users, eq(s.users.id, s.trips.createdBy))
+    // Trips the user can already see through a group are listed under it.
+    .leftJoin(s.groupMembers, and(eq(s.groupMembers.groupId, s.trips.groupId), eq(s.groupMembers.userId, userId)))
+    .where(and(eq(s.tripMembers.userId, userId), isNull(s.groupMembers.userId)))
+    .orderBy(desc(s.trips.updatedAt));
+  return rows.map((t) => ({
+    ...t,
+    updatedAt: t.updatedAt.toISOString(),
+    sharedBy: t.sharedBy ?? "Former member",
+    canDelete: false,
+    canShare: false,
+  }));
 }
 
 // ---------- Agent turns ----------

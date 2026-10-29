@@ -2,9 +2,35 @@
 
 import type { AgentEvent } from "@/lib/agent";
 import type { ExportFormat } from "@/lib/export";
-import type { CommentTarget, CommentView, GroupDetail, GroupSummary, Role, SavedVersion, TripView } from "@/lib/store";
+import type {
+  CommentTarget,
+  CommentView,
+  GroupDetail,
+  GroupSummary,
+  InvitePreview,
+  Role,
+  SavedVersion,
+  SharedTripSummary,
+  TripSharing,
+  TripView,
+  UserRef,
+} from "@/lib/store";
 
-export type { AgentEvent, CommentTarget, CommentView, ExportFormat, GroupDetail, GroupSummary, Role, SavedVersion, TripView };
+export type {
+  AgentEvent,
+  CommentTarget,
+  CommentView,
+  ExportFormat,
+  GroupDetail,
+  GroupSummary,
+  InvitePreview,
+  Role,
+  SavedVersion,
+  SharedTripSummary,
+  TripSharing,
+  TripView,
+  UserRef,
+};
 export type { Itinerary } from "@/lib/itinerary";
 
 export interface SessionUser {
@@ -66,6 +92,13 @@ export async function streamMessage(tripId: string, text: string, onEvent: (e: A
     }
   }
 }
+
+export const EXPORT_FORMATS: [ExportFormat, string][] = [
+  ["csv", "Spreadsheet (.csv)"],
+  ["md", "Document (.md)"],
+  ["ics", "Calendar (.ics)"],
+  ["json", "Data (.json)"],
+];
 
 export async function downloadExport(tripId: string, format: ExportFormat, versionId: string | null): Promise<void> {
   const params = new URLSearchParams({ format });

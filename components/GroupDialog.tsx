@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, formatDate, type GroupDetail, type Role, type SessionUser } from "./client";
+import { api, type GroupDetail, type Role, type SessionUser } from "./client";
 import { useDialogs } from "./Dialogs";
 
 interface Props {
@@ -24,8 +24,7 @@ const ROLE_HELP: Record<Role, string> = {
 export function GroupDialog({ groupId, user, onClose, onChanged, onGone, onError }: Props) {
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const [name, setName] = useState("");
-  const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("editor");
-  const [copied, setCopied] = useState<string | null>(null);
+  const [newOwner, setNewOwner] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const dialogs = useDialogs();
 
@@ -64,31 +63,8 @@ export function GroupDialog({ groupId, user, onClose, onChanged, onGone, onError
     }
   };
 
-  const inviteUrl = (token: string) => `${location.origin}/invite/${token}`;
-  const copy = async (token: string) => {
-    try {
-      await navigator.clipboard.writeText(inviteUrl(token));
-      setCopied(token);
-      setTimeout(() => setCopied(null), 2000);
-    } catch {
-      onError("Couldn't copy. Select the link and copy it manually.");
-    }
-  };
-
-  const createInvite = async () => {
-    try {
-      const { token } = await api<{ token: string }>(`/api/groups/${groupId}/invites`, {
-        method: "POST",
-        body: JSON.stringify({ role: inviteRole }),
-      });
-      await load();
-      copy(token);
-    } catch (err) {
-      onError((err as Error).message);
-    }
-  };
-
   const isOwner = group?.role === "owner";
+  const others = group?.members.filter((m) => m.id !== user.id) ?? [];
 
   return (
     <dialog ref={dialogRef} className="dialog" onClose={onClose} onCancel={onClose}>
@@ -134,7 +110,8 @@ export function GroupDialog({ groupId, user, onClose, onChanged, onGone, onError
                   </span>
                   <span className="muted member-email">{m.email}</span>
                 </span>
-                {isOwner ? (
+                {/* Your own role is fixed here; owners step down by transferring below. */}
+                {isOwner && m.id !== user.id ? (
                   <select
                     aria-label={`Role for ${m.name}`}
                     value={m.role}
@@ -174,44 +151,42 @@ export function GroupDialog({ groupId, user, onClose, onChanged, onGone, onError
             Owners: {ROLE_HELP.owner.toLowerCase()}. Editors: {ROLE_HELP.editor.toLowerCase()}. Viewers: {ROLE_HELP.viewer.toLowerCase()}.
           </p>
 
-          {isOwner && (
+          {isOwner && others.length > 0 && (
             <>
-              <h3 className="dialog-section">Invite people</h3>
+              <h3 className="dialog-section">Transfer ownership</h3>
               <div className="inline">
-                <select aria-label="Invite role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "editor" | "viewer")}>
-                  <option value="editor">As editor</option>
-                  <option value="viewer">As viewer</option>
+                <select className="new-owner" aria-label="New owner" value={newOwner} onChange={(e) => setNewOwner(e.target.value)}>
+                  <option value="">Choose a member…</option>
+                  {others.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
                 </select>
-                <button className="btn primary" onClick={createInvite}>
-                  Create invite link
+                <button
+                  className="btn"
+                  disabled={!newOwner}
+                  onClick={async () => {
+                    const to = others.find((m) => m.id === newOwner);
+                    if (!to) return;
+                    const ok = await dialogs.confirm({
+                      title: `Make ${to.name} the owner?`,
+                      message: `${to.name} will own ${group.name}, and you'll become an editor. Only an owner can make you an owner again.`,
+                      confirmText: "Transfer",
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    setNewOwner("");
+                    call(`/api/groups/${groupId}/transfer`, { method: "POST", body: JSON.stringify({ userId: to.id }) });
+                  }}
+                >
+                  Transfer
                 </button>
               </div>
-              {group.invites.length > 0 && (
-                <ul className="invites">
-                  {group.invites.map((inv) => (
-                    <li key={inv.token}>
-                      <input readOnly aria-label="Invite link" value={inviteUrl(inv.token)} onFocus={(e) => e.target.select()} />
-                      <span className="muted small">
-                        {inv.role} · expires {formatDate(inv.expiresAt)}
-                      </span>
-                      <button className="btn" onClick={() => copy(inv.token)}>
-                        {copied === inv.token ? "Copied" : "Copy"}
-                      </button>
-                      <button
-                        className="icon-btn danger-text"
-                        aria-label="Revoke invite"
-                        title="Revoke"
-                        onClick={() => call(`/api/groups/${groupId}/invites/${inv.token}`, { method: "DELETE" })}
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="muted small">Anyone with a link can join until it expires or you revoke it.</p>
             </>
           )}
+
+          <p className="muted small">To share a trip with someone, choose Share… in the trip's ⋯ menu. They'll get that trip only.</p>
 
           <div className="dialog-footer">
             <button

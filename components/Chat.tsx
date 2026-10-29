@@ -87,7 +87,8 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
             />
           )}
           <span className="trip-group muted">
-            {trip.groupName} · {trip.role}
+            {/* Another person's group name means nothing to someone the trip was shared with. */}
+            {trip.sharedBy ? `Shared by ${trip.sharedBy.name}` : trip.groupName} · {trip.role}
           </span>
         </div>
         <button className="btn icon mobile-only" id="show-itinerary" aria-label="Show itinerary" onClick={onShowItinerary}>

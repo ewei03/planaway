@@ -3,11 +3,24 @@
 import { signOut } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat, type LiveTurn } from "./Chat";
-import { api, canEdit, streamMessage, type AgentEvent, type GroupSummary, type SessionUser, type TripView } from "./client";
+import {
+  api,
+  canEdit,
+  downloadExport,
+  streamMessage,
+  type AgentEvent,
+  type ExportFormat,
+  type GroupSummary,
+  type SessionUser,
+  type SharedTripSummary,
+  type TripView,
+  type UserRef,
+} from "./client";
 import { useDialogs } from "./Dialogs";
 import { GroupDialog } from "./GroupDialog";
 import { ItineraryPane } from "./ItineraryPane";
 import { MapsProvider, type MapsConfig } from "./places";
+import { ShareDialog } from "./ShareDialog";
 import { Sidebar } from "./Sidebar";
 import { clampSplit, SplitHandle } from "./SplitHandle";
 import { StartScreen } from "./StartScreen";
@@ -37,6 +50,10 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   const [showItinerary, setShowItinerary] = useState(false);
   const [split, setSplit] = useState(DEFAULT_SPLIT);
   const [managingGroup, setManagingGroup] = useState<string | null>(null);
+  const [shared, setShared] = useState<SharedTripSummary[]>([]);
+  const [sharingTrip, setSharingTrip] = useState<string | null>(null);
+  /** Other people with the open trip on screen right now. */
+  const [viewers, setViewers] = useState<UserRef[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const dialogs = useDialogs();
 
@@ -85,10 +102,12 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     else collapseSidebar(true);
   };
 
+  /** Reloads the sidebar: the user's groups and the trips shared with them. */
   const loadGroups = useCallback(() => {
-    api<GroupSummary[]>("/api/groups").then(
-      (g) => {
+    Promise.all([api<GroupSummary[]>("/api/groups"), api<SharedTripSummary[]>("/api/trips/shared")]).then(
+      ([g, sharedTrips]) => {
         setGroups(g);
+        setShared(sharedTrips);
         setGroupsLoaded(true);
       },
       (err: Error) => notify(err.message),
@@ -133,19 +152,25 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   }, [loadGroups, openTrip]);
 
   // Collaboration: poll the trip's revision and refetch when anyone changes
-  // it. Paused while this tab streams its own turn.
+  // it. Paused while this tab streams its own turn. Each poll also says this
+  // user is here and returns who else is, for the viewer avatars.
   const tripId = trip?.id;
   const revision = trip?.revision;
+  useEffect(() => setViewers([]), [tripId]);
   useEffect(() => {
     if (!tripId || streamingHere) return;
-    const timer = setInterval(async () => {
+    const poll = async () => {
       if (document.hidden) return;
-      const r = await api<{ revision: number }>(`/api/trips/${tripId}/revision`).catch(() => null);
-      if (r && r.revision !== revision) {
+      const r = await api<{ revision: number; viewers: UserRef[] }>(`/api/trips/${tripId}/revision`).catch(() => null);
+      if (!r || activeId.current !== tripId) return;
+      setViewers(r.viewers);
+      if (r.revision !== revision) {
         await refreshTrip();
         loadGroups();
       }
-    }, POLL_MS);
+    };
+    poll();
+    const timer = setInterval(poll, POLL_MS);
     return () => clearInterval(timer);
   }, [tripId, revision, streamingHere, refreshTrip, loadGroups]);
 
@@ -227,38 +252,78 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     }
   };
 
-  const saveVersion = async () => {
-    if (!trip) return;
-    const label = await dialogs.ask({
-      title: "Save this version",
-      message: "Saves a snapshot of the current draft that you can view or export later.",
-      label: "Name",
-      defaultValue: `Version ${trip.versions.length + 1}`,
-      confirmText: "Save",
-    });
-    if (label === null) return;
+  // Trip actions from the sidebar menu. They work on any trip in the list, not
+  // just the one that's open.
+  const findTrip = (tripId: string) => {
+    for (const g of groups) {
+      const t = g.trips.find((t) => t.id === tripId);
+      // Personal groups have no one else to mention.
+      if (t) return { ...t, sharedGroup: g.personal ? null : g.name };
+    }
+    const t = shared.find((t) => t.id === tripId);
+    return t ? { ...t, sharedGroup: null } : null;
+  };
+
+  const saveVersion = async (tripId: string) => {
     try {
-      await api(`/api/trips/${trip.id}/versions`, { method: "POST", body: JSON.stringify({ label }) });
-      await refreshTrip();
+      const target = trip?.id === tripId ? trip : await api<TripView>(`/api/trips/${tripId}`);
+      const label = await dialogs.ask({
+        title: `Save a version of "${target.title}"`,
+        message: "Saves a snapshot of the current draft that you can view or export later.",
+        label: "Name",
+        defaultValue: `Version ${target.versions.length + 1}`,
+        confirmText: "Save",
+      });
+      if (label === null) return;
+      await api(`/api/trips/${tripId}/versions`, { method: "POST", body: JSON.stringify({ label }) });
+      if (activeId.current === tripId) await refreshTrip();
       notify(`Saved "${label || "version"}"`);
     } catch (err) {
       notify((err as Error).message);
     }
   };
 
-  const deleteTrip = async () => {
-    if (!trip) return;
+  const exportTrip = (tripId: string, format: ExportFormat) => {
+    // For the open trip, export the version on screen.
+    const version = trip?.id === tripId && viewing !== "current" ? viewing : null;
+    downloadExport(tripId, format, version).catch((err: Error) => notify(err.message));
+  };
+
+  const deleteTrip = async (tripId: string) => {
+    const target = findTrip(tripId);
+    if (!target) return;
     const ok = await dialogs.confirm({
-      title: `Delete "${trip.title}"?`,
-      message: `This deletes the trip, its chat, comments, and saved versions for everyone in ${trip.groupName}.`,
+      title: `Delete "${target.title}"?`,
+      message: "This deletes the trip, its chat, comments, and saved versions for everyone who has access to it.",
       danger: true,
     });
     if (!ok) return;
     try {
-      await api(`/api/trips/${trip.id}`, { method: "DELETE" });
-      showTrip(null);
+      await api(`/api/trips/${tripId}`, { method: "DELETE" });
+      if (activeId.current === tripId) showTrip(null);
       loadGroups();
       notify("Trip deleted");
+    } catch (err) {
+      notify((err as Error).message);
+    }
+  };
+
+  /** Gives up access to a trip someone shared through an invite link. */
+  const leaveTrip = async (tripId: string) => {
+    const target = findTrip(tripId);
+    if (!target) return;
+    const ok = await dialogs.confirm({
+      title: `Leave "${target.title}"?`,
+      message: "You'll lose access to this trip until someone shares it with you again.",
+      confirmText: "Leave",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/trips/${tripId}/members/${user.id}`, { method: "DELETE" });
+      if (activeId.current === tripId) showTrip(null);
+      loadGroups();
+      notify("You left the trip");
     } catch (err) {
       notify((err as Error).message);
     }
@@ -293,6 +358,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
         <Sidebar
           user={user}
           groups={groups}
+          shared={shared}
           activeId={trip?.id ?? null}
           onSelect={openTrip}
           onNewTrip={(groupId) => {
@@ -301,6 +367,11 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
           }}
           onNewGroup={newGroup}
           onManageGroup={setManagingGroup}
+          onSaveVersion={saveVersion}
+          onExport={exportTrip}
+          onShare={setSharingTrip}
+          onDelete={deleteTrip}
+          onLeave={leaveTrip}
           onSignOut={() => signOut({ redirectTo: "/login" })}
           onHide={hideSidebar}
         />
@@ -327,10 +398,11 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
                 trip={trip}
                 user={user}
                 viewing={viewing}
+                viewers={viewers}
                 working={working}
                 onView={setViewing}
-                onSaveVersion={saveVersion}
-                onDelete={deleteTrip}
+                onSaveVersion={() => saveVersion(trip.id)}
+                onExport={(format) => exportTrip(trip.id, format)}
                 onBack={() => setShowItinerary(false)}
                 onChanged={refreshTrip}
                 onAskAgent={() => sendMessage(trip.id, ASK_ABOUT_COMMENTS)}
@@ -359,6 +431,16 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
               setManagingGroup(null);
               if (trip && trip.groupId === managingGroup) showTrip(null);
             }}
+            onError={notify}
+          />
+        )}
+
+        {sharingTrip && (
+          <ShareDialog
+            tripId={sharingTrip}
+            tripTitle={findTrip(sharingTrip)?.title ?? "trip"}
+            groupName={findTrip(sharingTrip)?.sharedGroup ?? null}
+            onClose={() => setSharingTrip(null)}
             onError={notify}
           />
         )}

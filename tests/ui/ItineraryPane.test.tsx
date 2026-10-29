@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DialogProvider } from "@/components/Dialogs";
 import { ItineraryPane } from "@/components/ItineraryPane";
 import { sampleItinerary } from "../fixtures";
-import { commentView, me, mockFetch, tripView } from "./fixtures";
+import { commentView, me, tripView } from "./fixtures";
 
 function setup(overrides: Partial<ComponentProps<typeof ItineraryPane>> = {}) {
   const props: ComponentProps<typeof ItineraryPane> = {
@@ -15,7 +15,7 @@ function setup(overrides: Partial<ComponentProps<typeof ItineraryPane>> = {}) {
     working: false,
     onView: vi.fn(),
     onSaveVersion: vi.fn(),
-    onDelete: vi.fn(),
+    onExport: vi.fn(),
     onBack: vi.fn(),
     onChanged: vi.fn(),
     onAskAgent: vi.fn(),
@@ -36,31 +36,35 @@ describe("ItineraryPane", () => {
   it("shows an empty state that depends on whether the agent is working", () => {
     const { view } = setup({ trip: tripView({ itinerary: null }) });
     expect(screen.getByText(/No itinerary yet/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export ▾" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     view.unmount();
     setup({ trip: tripView({ itinerary: null }), working: true });
     expect(screen.getByText(/Researching your trip/)).toBeInTheDocument();
   });
 
-  it("shows a saved version and disables saving while viewing it", () => {
+  it("shows a saved version", () => {
     setup({ trip: tripView({ versions: [version] }), viewing: "v1" });
     expect(screen.getByRole("heading", { name: "Old plan" })).toBeInTheDocument();
+  });
+
+  it("saves the current draft from the toolbar", async () => {
+    const { props } = setup();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(props.onSaveVersion).toHaveBeenCalled();
+    // Delete stays in the sidebar's trip menu.
+    expect(screen.queryByRole("button", { name: /^Delete/ })).toBeNull();
+  });
+
+  it("disables Save while viewing an old version or before there's an itinerary", () => {
+    const { view } = setup({ trip: tripView({ versions: [version] }), viewing: "v1" });
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    view.unmount();
+    setup({ trip: tripView({ itinerary: null }) });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export ▾" })).toBeDisabled();
   });
 
-  it("switches versions from the menu", async () => {
-    const { props } = setup({ trip: tripView({ versions: [version] }) });
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Itinerary version" }), "v1");
-    expect(props.onView).toHaveBeenCalledWith("v1");
-  });
-
-  it("exports the version being viewed", async () => {
-    const fetch = mockFetch(() => new Response("x"));
-    URL.createObjectURL = vi.fn(() => "blob:x");
-    URL.revokeObjectURL = vi.fn();
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    setup({ trip: tripView({ versions: [version] }), viewing: "v1" });
+  it("exports from the toolbar menu", async () => {
+    const { props } = setup();
     await userEvent.click(screen.getByRole("button", { name: "Export ▾" }));
     expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
       "Spreadsheet (.csv)",
@@ -69,31 +73,35 @@ describe("ItineraryPane", () => {
       "Data (.json)",
     ]);
     await userEvent.click(screen.getByRole("menuitem", { name: "Calendar (.ics)" }));
-    expect(fetch.mock.calls[0][0]).toBe(`/api/trips/${tripView().id}/export?format=ics&version=v1`);
+    expect(props.onExport).toHaveBeenCalledWith("ics");
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("reports export errors", async () => {
-    mockFetch(() => Response.json({ error: "This itinerary has no dates yet." }, { status: 422 }));
-    const { props } = setup();
-    await userEvent.click(screen.getByRole("button", { name: "Export ▾" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Calendar (.ics)" }));
-    await vi.waitFor(() => expect(props.onError).toHaveBeenCalledWith("This itinerary has no dates yet."));
-  });
-
-  it("closes the export menu on an outside click", async () => {
+  it("closes the export menu on an outside click or Escape", async () => {
     setup();
     await userEvent.click(screen.getByRole("button", { name: "Export ▾" }));
-    expect(screen.getByRole("menu")).toBeInTheDocument();
     await userEvent.click(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Export ▾" }));
+    await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("hides editor-only actions from viewers", () => {
-    setup({ trip: tripView({ role: "viewer", canDelete: false }) });
+  it("lets viewers export but not save", () => {
+    setup({ trip: tripView({ role: "viewer", canDelete: false, canShare: false }) });
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
     expect(screen.getByRole("button", { name: "Export ▾" })).toBeEnabled();
+  });
+
+  it("switches versions from the menu", async () => {
+    const { props } = setup({ trip: tripView({ versions: [version] }) });
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Itinerary version" }), "v1");
+    expect(props.onView).toHaveBeenCalledWith("v1");
+  });
+
+  it("shows who else is viewing in the toolbar", () => {
+    setup({ viewers: [{ id: "u-sam", name: "Sam" }] });
+    expect(screen.getByRole("group", { name: "Also viewing: Sam" })).toBeInTheDocument();
   });
 
   it("counts open comment threads and opens the panel on an item", async () => {
