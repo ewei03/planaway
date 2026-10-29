@@ -102,3 +102,8 @@ describe("StartScreen", () => {
     expect(onGroupChange).toHaveBeenCalledWith("c");
   });
 });
+
+it("waits for groups to load before starting a trip", () => {
+  render(<StartScreen groups={[]} groupId="" onGroupChange={vi.fn()} onStart={vi.fn()} onOpenSidebar={vi.fn()} loading />);
+  expect(screen.getByRole("button", { name: "Plan this trip" })).toBeDisabled();
+});

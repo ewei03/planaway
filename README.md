@@ -26,6 +26,18 @@ DATABASE_URL=postgres://planaway:planaway@localhost:5432/planaway
 
 Migrations in `drizzle/` run automatically on startup. After changing `lib/db/schema.ts`, generate a new migration with `npx drizzle-kit generate`.
 
+### Maps and photos
+
+The itinerary shows a route map and photos of destinations, activities, and stays. Both are free and need no API keys:
+
+- **Map:** [MapLibre GL](https://maplibre.org) with [OpenFreeMap](https://openfreemap.org) tiles (OpenStreetMap data).
+- **Places:** [Nominatim](https://nominatim.org), the OpenStreetMap search, finds each destination, activity, stay, and airport.
+- **Photos:** when a place's OpenStreetMap entry links to Wikidata, its image comes from [Wikimedia Commons](https://commons.wikimedia.org), shown with its author and license.
+
+The public Nominatim server allows one request per second for the whole app, so lookups are paced, a few new places per request. Pins and photos fill in over a few seconds for a new trip. Results are cached in the database for 30 days, and revising a plan only looks up new places. Famous sights and neighborhoods are found reliably; small restaurants and hotels sometimes aren't, and then simply have no pin or photo.
+
+Set `NOMINATIM_EMAIL` so the Nominatim operators can contact you about heavy use. For a busy deployment, self-host Nominatim and the tiles and point `NOMINATIM_URL` and `MAP_STYLE_URL` at them.
+
 ## Testing
 
 ```sh
@@ -85,6 +97,7 @@ Code layout:
 - `lib/db/`: the Drizzle schema and connection (PGlite or Postgres)
 - `lib/store.ts`: all data access and permission checks
 - `lib/agent.ts`, `lib/itinerary.ts`, `lib/export.ts`: the agent loop, itinerary schema, and exporters
+- `lib/route.ts`, `lib/places.ts`: turning an itinerary into a map route, and place and photo lookups with caching
 - `auth.ts`: Auth.js configuration (email and password, bcrypt, JWT session cookie)
 
 Settings in `.env`:
@@ -96,6 +109,9 @@ Settings in `.env`:
 | `DATABASE_URL` | (unset: PGlite) | Postgres connection string |
 | `PGLITE_DIR` | `data/pglite` | Where PGlite stores data |
 | `PLANAWAY_MODEL` | `claude-opus-5-5` | |
+| `MAP_STYLE_URL` | OpenFreeMap "liberty" | MapLibre style for the route map |
+| `NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Place search |
+| `NOMINATIM_EMAIL` | (unset) | Contact address sent to Nominatim |
 | `PLANAWAY_EFFORT` | `medium` | `low` to `max`. Higher means more thorough research and higher cost. |
 
 ## Notes
@@ -104,4 +120,4 @@ Settings in `.env`:
 - Every turn calls the API with web search enabled. Web searches are billed per search on top of tokens.
 - Before running this on a public server, add rate limiting on sign-in and registration, email verification, and password reset. None of these exist yet.
 
-TODO: Build a map feature; make it more visually appealing for UI/UX purposes
+TODO: Make it more visually appealing for UI/UX purposes

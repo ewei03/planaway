@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ItineraryView } from "@/components/ItineraryView";
-import { sampleItinerary } from "../fixtures";
+import { fullLookup, sampleItinerary } from "../fixtures";
 
 function setup(counts = new Map<string, number>(), itinerary = sampleItinerary()) {
   const onComment = vi.fn();
@@ -59,6 +59,26 @@ describe("ItineraryView", () => {
     expect(onComment).toHaveBeenLastCalledWith({ type: "trip", id: null, label: "Whole trip" });
     await userEvent.click(screen.getByRole("button", { name: "Comment on Flight SFO → KIX" }));
     expect(onComment).toHaveBeenLastCalledWith({ type: "flight", id: "f1", label: "Flight SFO → KIX" });
+  });
+
+  it("shows photos once places are known", () => {
+    const onComment = vi.fn();
+    render(
+      <ItineraryView itinerary={sampleItinerary()} counts={new Map()} onComment={onComment} lookup={fullLookup()} map={<div>MAP HERE</div>} />,
+    );
+    // Destination hero photos, activity and stay thumbnails.
+    expect(screen.getByRole("button", { name: "Photos of Kyoto" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Photos of Nara" })).toBeInTheDocument();
+    for (const name of ["Nishiki Market", "Pontocho dinner", "Todai-ji", "Gion Ryokan"]) {
+      expect(screen.getByRole("button", { name: `Photos of ${name}` })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("heading", { name: "Route" }).parentElement).toHaveTextContent("MAP HERE");
+  });
+
+  it("shows no photos or map section without them", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: /^Photos of/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Route" })).toBeNull();
   });
 
   it("shows open comment counts on items", () => {

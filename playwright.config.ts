@@ -43,6 +43,13 @@ export default defineConfig({
         DATABASE_URL: "",
         ANTHROPIC_BASE_URL: `http://localhost:${MOCK_PORT}`,
         ANTHROPIC_API_KEY: "test-key",
+        // Place lookups, photos, and the map style come from the mock server
+        // too, so tests never hit OpenStreetMap or Wikimedia.
+        NOMINATIM_URL: `http://localhost:${MOCK_PORT}`,
+        NOMINATIM_INTERVAL_MS: "0",
+        WIKIDATA_URL: `http://localhost:${MOCK_PORT}`,
+        COMMONS_URL: `http://localhost:${MOCK_PORT}`,
+        MAP_STYLE_URL: `http://localhost:${MOCK_PORT}/style.json`,
         AUTH_SECRET: "e2e-test-secret-not-for-production-use",
       },
     },

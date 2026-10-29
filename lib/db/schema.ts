@@ -14,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Itinerary } from "../itinerary";
+import type { Place } from "../route";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -153,3 +154,15 @@ export const comments = pgTable(
   },
   (t) => [index("comments_trip_idx").on(t.tripId, t.createdAt), index("comments_parent_idx").on(t.parentId)],
 );
+
+/**
+ * Place lookups (OpenStreetMap and Wikimedia), keyed by the normalized text
+ * query. place is null when nothing was found, so misses aren't retried on
+ * every render. Rows older than the TTL in lib/places.ts are refetched, so
+ * places stay current.
+ */
+export const placeCache = pgTable("place_cache", {
+  query: text("query").primaryKey(),
+  place: jsonb("place").$type<Place | null>(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});

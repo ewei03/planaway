@@ -38,10 +38,17 @@ export async function signOut(page: Page) {
 
 /** Starts a trip from the start screen and waits for the agent's turn to finish. */
 export async function planTrip(page: Page, idea = "A food weekend in Kyoto for two") {
+  // The start screen is server-rendered; wait until React has hydrated it, or
+  // the click submits the form natively. (Matters right after a cold start.)
+  await page.waitForFunction(() => {
+    const el = document.querySelector("#idea-text");
+    return el !== null && Object.keys(el).some((k) => k.startsWith("__react"));
+  });
   await page.getByLabel("Your trip idea").fill(idea);
   await page.getByRole("button", { name: "Plan this trip" }).click();
   // The chat header takes the itinerary's title once the turn is saved. (On
   // phones the itinerary pane itself is hidden until opened.)
-  await expect(page.getByRole("heading", { name: "Kyoto Food Weekend", level: 1 })).toBeVisible();
+  // Generous: the first run after a fresh build compiles the routes on demand.
+  await expect(page.getByRole("heading", { name: "Kyoto Food Weekend", level: 1 })).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText("Your trip is ready.")).toBeVisible();
 }

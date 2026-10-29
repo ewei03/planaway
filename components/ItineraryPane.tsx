@@ -14,6 +14,8 @@ import {
 } from "./client";
 import { CommentsPanel } from "./CommentsPanel";
 import { ItineraryView } from "./ItineraryView";
+import { usePlaces } from "./places";
+import { TripMap } from "./TripMap";
 
 const FORMATS: [ExportFormat, string][] = [
   ["csv", "Spreadsheet (.csv)"],
@@ -55,6 +57,7 @@ export function ItineraryPane(props: Props) {
 
   const itinerary: Itinerary | null =
     viewing === "current" ? trip.itinerary : (trip.versions.find((v) => v.id === viewing)?.itinerary ?? null);
+  const { lookup, loading: placesLoading } = usePlaces(itinerary);
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
@@ -131,7 +134,13 @@ export function ItineraryPane(props: Props) {
       <div className="pane-body">
         <div className="itinerary">
           {itinerary ? (
-            <ItineraryView itinerary={itinerary} counts={counts} onComment={setCommentAnchor} />
+            <ItineraryView
+              itinerary={itinerary}
+              counts={counts}
+              onComment={setCommentAnchor}
+              lookup={lookup}
+              map={<TripMap itinerary={itinerary} lookup={lookup} loading={placesLoading} />}
+            />
           ) : (
             <p className="it-empty">
               {working

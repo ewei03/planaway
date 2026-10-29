@@ -3,26 +3,21 @@
 import { signOut } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat, type LiveTurn } from "./Chat";
-import {
-  api,
-  canEdit,
-  streamMessage,
-  type AgentEvent,
-  type GroupSummary,
-  type SessionUser,
-  type TripView,
-} from "./client";
+import { api, canEdit, streamMessage, type AgentEvent, type GroupSummary, type SessionUser, type TripView } from "./client";
 import { useDialogs } from "./Dialogs";
 import { GroupDialog } from "./GroupDialog";
 import { ItineraryPane } from "./ItineraryPane";
+import { MapsProvider, type MapsConfig } from "./places";
 import { Sidebar } from "./Sidebar";
 import { StartScreen } from "./StartScreen";
 
 const POLL_MS = 4000;
 const ASK_ABOUT_COMMENTS = "Please go through the open comments and update the plan where it makes sense.";
 
-export function PlanAway({ user }: { user: SessionUser }) {
+export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }) {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
+  // Until the first load, there's no group to create a trip in yet.
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [trip, setTrip] = useState<TripView | null>(null);
   const [newTripGroup, setNewTripGroup] = useState<string | null>(null);
   const [viewing, setViewing] = useState("current");
@@ -47,7 +42,13 @@ export function PlanAway({ user }: { user: SessionUser }) {
   }, [toast]);
 
   const loadGroups = useCallback(() => {
-    api<GroupSummary[]>("/api/groups").then(setGroups, (err: Error) => notify(err.message));
+    api<GroupSummary[]>("/api/groups").then(
+      (g) => {
+        setGroups(g);
+        setGroupsLoaded(true);
+      },
+      (err: Error) => notify(err.message),
+    );
   }, [notify]);
 
   const showTrip = useCallback((next: TripView | null) => {
@@ -238,84 +239,87 @@ export function PlanAway({ user }: { user: SessionUser }) {
   };
 
   return (
-    <div
-      className={`app ${sidebarOpen ? "sidebar-open" : ""}`}
-      onClick={(e) => {
-        if (sidebarOpen && !(e.target as Element).closest(".sidebar, .open-sidebar")) setSidebarOpen(false);
-      }}
-    >
-      <Sidebar
-        user={user}
-        groups={groups}
-        activeId={trip?.id ?? null}
-        onSelect={openTrip}
-        onNewTrip={(groupId) => {
-          setNewTripGroup(groupId);
-          showTrip(null);
+    <MapsProvider value={maps}>
+      <div
+        className={`app ${sidebarOpen ? "sidebar-open" : ""}`}
+        onClick={(e) => {
+          if (sidebarOpen && !(e.target as Element).closest(".sidebar, .open-sidebar")) setSidebarOpen(false);
         }}
-        onNewGroup={newGroup}
-        onManageGroup={setManagingGroup}
-        onSignOut={() => signOut({ redirectTo: "/login" })}
-      />
+      >
+        <Sidebar
+          user={user}
+          groups={groups}
+          activeId={trip?.id ?? null}
+          onSelect={openTrip}
+          onNewTrip={(groupId) => {
+            setNewTripGroup(groupId);
+            showTrip(null);
+          }}
+          onNewGroup={newGroup}
+          onManageGroup={setManagingGroup}
+          onSignOut={() => signOut({ redirectTo: "/login" })}
+        />
 
-      <main className="main">
-        {trip ? (
-          <section className={`workspace ${showItinerary ? "show-itinerary" : ""}`}>
-            <Chat
-              trip={trip}
-              user={user}
-              live={live}
-              working={working}
-              status={statusText}
-              onSend={(text) => sendMessage(trip.id, text)}
-              onRename={rename}
+        <main className="main">
+          {trip ? (
+            <section className={`workspace ${showItinerary ? "show-itinerary" : ""}`}>
+              <Chat
+                trip={trip}
+                user={user}
+                live={live}
+                working={working}
+                status={statusText}
+                onSend={(text) => sendMessage(trip.id, text)}
+                onRename={rename}
+                onOpenSidebar={() => setSidebarOpen(true)}
+                onShowItinerary={() => setShowItinerary(true)}
+              />
+              <ItineraryPane
+                trip={trip}
+                user={user}
+                viewing={viewing}
+                working={working}
+                onView={setViewing}
+                onSaveVersion={saveVersion}
+                onDelete={deleteTrip}
+                onBack={() => setShowItinerary(false)}
+                onChanged={refreshTrip}
+                onAskAgent={() => sendMessage(trip.id, ASK_ABOUT_COMMENTS)}
+                onError={notify}
+              />
+            </section>
+          ) : (
+            <StartScreen
+              groups={editableGroups}
+              groupId={startGroupId ?? ""}
+              onGroupChange={setNewTripGroup}
+              onStart={startTrip}
               onOpenSidebar={() => setSidebarOpen(true)}
-              onShowItinerary={() => setShowItinerary(true)}
+              loading={!groupsLoaded}
             />
-            <ItineraryPane
-              trip={trip}
-              user={user}
-              viewing={viewing}
-              working={working}
-              onView={setViewing}
-              onSaveVersion={saveVersion}
-              onDelete={deleteTrip}
-              onBack={() => setShowItinerary(false)}
-              onChanged={refreshTrip}
-              onAskAgent={() => sendMessage(trip.id, ASK_ABOUT_COMMENTS)}
-              onError={notify}
-            />
-          </section>
-        ) : (
-          <StartScreen
-            groups={editableGroups}
-            groupId={startGroupId ?? ""}
-            onGroupChange={setNewTripGroup}
-            onStart={startTrip}
-            onOpenSidebar={() => setSidebarOpen(true)}
+          )}
+        </main>
+
+        {managingGroup && (
+          <GroupDialog
+            groupId={managingGroup}
+            user={user}
+            onClose={() => setManagingGroup(null)}
+            onChanged={loadGroups}
+            onGone={() => {
+              setManagingGroup(null);
+              if (trip && trip.groupId === managingGroup) showTrip(null);
+            }}
+            onError={notify}
           />
         )}
-      </main>
 
-      {managingGroup && (
-        <GroupDialog
-          groupId={managingGroup}
-          user={user}
-          onClose={() => setManagingGroup(null)}
-          onChanged={loadGroups}
-          onGone={() => {
-            setManagingGroup(null);
-            if (trip && trip.groupId === managingGroup) showTrip(null);
-          }}
-          onError={notify}
-        />
-      )}
-
-      {toast && (
-        <div className="toast" role="status">
-          {toast}
-        </div>
-      )}
-    </div>
+        {toast && (
+          <div className="toast" role="status">
+            {toast}
+          </div>
+        )}
+      </div>
+    </MapsProvider>
   );
 }

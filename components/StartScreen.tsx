@@ -82,9 +82,11 @@ interface Props {
   onGroupChange: (groupId: string) => void;
   onStart: (prompt: string) => Promise<void>;
   onOpenSidebar: () => void;
+  /** Groups are still loading: starting a trip has to wait. */
+  loading?: boolean;
 }
 
-export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSidebar }: Props) {
+export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSidebar, loading = false }: Props) {
   const [tab, setTab] = useState<"idea" | "build">("idea");
   const [idea, setIdea] = useState("");
   const [form, setForm] = useState<BuildForm>(EMPTY_FORM);
@@ -169,7 +171,7 @@ export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSid
               placeholder="e.g. 10 days in Japan next April for two, Tokyo and Kyoto, love food and design, about $6,000 total from San Francisco"
             />
             <div className="form-actions">
-              <button className="btn primary" type="submit" disabled={starting}>
+              <button className="btn primary" type="submit" disabled={starting || loading}>
                 Plan this trip
               </button>
             </div>
@@ -243,10 +245,10 @@ export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSid
             />
 
             <div className="form-actions">
-              <button className="btn ghost" type="button" disabled={starting} onClick={() => start(surprisePrompt(form))}>
+              <button className="btn ghost" type="button" disabled={starting || loading} onClick={() => start(surprisePrompt(form))}>
                 🎲 Surprise me
               </button>
-              <button className="btn primary" type="submit" disabled={starting}>
+              <button className="btn primary" type="submit" disabled={starting || loading}>
                 Build my trip
               </button>
             </div>

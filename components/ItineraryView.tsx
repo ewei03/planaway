@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
+import { activityQuery, heroPhotos, lodgingQuery } from "@/lib/route";
 import { anchorKey, money, safeUrl, type CommentAnchor, type CommentTarget, type Itinerary } from "./client";
+import { HeroPhotos, PlaceThumb, type PlaceLookup } from "./places";
+import { dayColor } from "./TripMap";
 
 type Day = Itinerary["days"][number];
 
@@ -43,10 +46,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Row({ title, sub, price, comment }: { title: ReactNode; sub: (string | null | undefined)[]; price?: string; comment?: ReactNode }) {
+function Row({ title, sub, price, comment, thumb }: { title: ReactNode; sub: (string | null | undefined)[]; price?: string; comment?: ReactNode; thumb?: ReactNode }) {
   const subText = sub.filter(Boolean).join(" · ");
   return (
     <div className="row">
+      {thumb}
       <div className="row-main">
         <div className="row-title">{title}</div>
         {subText && <div className="row-sub">{subText}</div>}
@@ -57,11 +61,17 @@ function Row({ title, sub, price, comment }: { title: ReactNode; sub: (string | 
   );
 }
 
-function DayCard({ day, currency, ...c }: { day: Day; currency: string } & CommentProps) {
+/** No photos until places are looked up (or when they aren't set up). */
+const noPlaces: PlaceLookup = () => undefined;
+
+function DayCard({ day, currency, lookup, ...c }: { day: Day; currency: string; lookup: PlaceLookup } & CommentProps) {
   return (
     <div className="day">
       <div className="day-head">
-        <span className="day-num">Day {day.day}</span>
+        <span className="day-num">
+          <span className="day-dot" style={{ background: dayColor(day.day) }} aria-hidden="true" />
+          Day {day.day}
+        </span>
         <span className="day-title">{day.title}</span>
         <span className="day-meta">{[day.location, day.date].filter(Boolean).join(" · ")}</span>
         <CommentButton type="day" id={day.id} label={`Day ${day.day}: ${day.title}`} {...c} />
@@ -69,12 +79,15 @@ function DayCard({ day, currency, ...c }: { day: Day; currency: string } & Comme
       {day.activities.map((a, i) => (
         <div className="act" key={a.id || i}>
           <div className="act-time">{a.time ?? ""}</div>
-          <div>
-            <div className="act-name">
-              <Link text={a.name} url={a.url} />
-              <span className="tag">{a.category}</span>
+          <div className="act-body">
+            <PlaceThumb place={lookupActivity(lookup, a, day)} label={a.name} />
+            <div>
+              <div className="act-name">
+                <Link text={a.name} url={a.url} />
+                <span className="tag">{a.category}</span>
+              </div>
+              <div className="act-desc">{a.description}</div>
             </div>
-            <div className="act-desc">{a.description}</div>
           </div>
           <div className="act-side">
             <span className="row-price">{money(a.est_cost, currency)}</span>
@@ -86,7 +99,20 @@ function DayCard({ day, currency, ...c }: { day: Day; currency: string } & Comme
   );
 }
 
-export function ItineraryView({ itinerary: it, counts, onComment }: { itinerary: Itinerary } & CommentProps) {
+function lookupActivity(lookup: PlaceLookup, a: Day["activities"][number], day: Day) {
+  const q = activityQuery(a, day);
+  return q ? lookup(q) : null;
+}
+
+interface ViewProps extends CommentProps {
+  itinerary: Itinerary;
+  /** Places for photos; see usePlaces. */
+  lookup?: PlaceLookup;
+  /** Rendered between the trip facts and the details, e.g. the route map. */
+  map?: ReactNode;
+}
+
+export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPlaces, map }: ViewProps) {
   const c = it.currency;
   const cp = { counts, onComment };
   const facts = [
@@ -100,6 +126,7 @@ export function ItineraryView({ itinerary: it, counts, onComment }: { itinerary:
 
   return (
     <>
+      <HeroPhotos photos={heroPhotos(it, lookup)} />
       <div className="it-head">
         <div className="it-title-row">
           <h2>{it.title}</h2>
@@ -114,6 +141,8 @@ export function ItineraryView({ itinerary: it, counts, onComment }: { itinerary:
           </span>
         ))}
       </div>
+
+      {map && <Section title="Route">{map}</Section>}
 
       {it.flights.length > 0 && (
         <Section title="Flights">
@@ -141,6 +170,7 @@ export function ItineraryView({ itinerary: it, counts, onComment }: { itinerary:
                 sub={[l.area, l.check_in || l.check_out ? `${l.check_in ?? "?"} → ${l.check_out ?? "?"}` : null, l.notes]}
                 price={l.nightly_price !== null ? `${money(l.nightly_price, c)}/night` : undefined}
                 comment={<CommentButton type="lodging" id={l.id} label={`Stay: ${l.name}`} {...cp} />}
+                thumb={<PlaceThumb place={lookup(lodgingQuery(l))} label={l.name} size={44} />}
               />
             ))}
           </div>
@@ -149,7 +179,7 @@ export function ItineraryView({ itinerary: it, counts, onComment }: { itinerary:
 
       <Section title="Day by day">
         {it.days.map((d, i) => (
-          <DayCard key={d.id || i} day={d} currency={c} {...cp} />
+          <DayCard key={d.id || i} day={d} currency={c} lookup={lookup} {...cp} />
         ))}
       </Section>
 

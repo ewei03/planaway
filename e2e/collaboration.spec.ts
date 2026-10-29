@@ -82,7 +82,7 @@ test("outsiders can't open a group's trip by URL", async ({ page, browser }) => 
   const other = await otherContext.newPage();
   await register(other, account("Outsider"));
   await other.goto(tripUrl);
-  await expect(other.getByRole("status")).toHaveText("Trip not found");
+  await expect(other.locator(".toast")).toHaveText("Trip not found");
   await expect(other.getByRole("heading", { name: "Where to next?" })).toBeVisible();
   await otherContext.close();
 });

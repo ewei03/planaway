@@ -19,6 +19,7 @@
     "@electric-sql/pglite": "^0.5.12",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.4",
+    "maplibre-gl": "^5.24.0",
     "next": "^16.4.3",
     "next-auth": "^5.0.0-beta.32",
     "pg": "^8.23.1",

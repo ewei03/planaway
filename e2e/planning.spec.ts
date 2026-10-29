@@ -50,7 +50,7 @@ test("rename, save a version, and export", async ({ page }) => {
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("textbox", { name: "Name" }).fill("First draft");
   await page.getByRole("button", { name: "Save", exact: true }).last().click();
-  await expect(page.getByRole("status")).toHaveText('Saved "First draft"');
+  await expect(page.locator(".toast")).toHaveText('Saved "First draft"');
   await expect(page.getByLabel("Itinerary version").locator("option", { hasText: "First draft" })).toHaveCount(1);
 
   for (const [item, file] of [
@@ -91,7 +91,7 @@ test("delete a trip", async ({ page }) => {
   await planTrip(page);
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByRole("status")).toHaveText("Trip deleted");
+  await expect(page.locator(".toast")).toHaveText("Trip deleted");
   await expect(page.getByRole("heading", { name: "Where to next?" })).toBeVisible();
   await expect(page.locator(".trip-list")).toContainText("No trips yet.");
 });
