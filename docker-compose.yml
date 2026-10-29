@@ -1,0 +1,15 @@
+# Local Postgres. Start with `docker compose up -d`, then set
+# DATABASE_URL=postgres://planaway:planaway@localhost:5432/planaway in .env
+services:
+  db:
+    image: postgres:17.6
+    environment:
+      POSTGRES_USER: planaway
+      POSTGRES_PASSWORD: planaway
+      POSTGRES_DB: planaway
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

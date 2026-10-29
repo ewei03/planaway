@@ -1,0 +1,91 @@
+{
+  "title": "Kyoto Food Weekend",
+  "summary": "Three days of temples, markets, and izakayas in Kyoto.",
+  "origin": "San Francisco",
+  "destinations": ["Kyoto", "Nara"],
+  "start_date": "2027-04-02",
+  "end_date": "2027-04-04",
+  "travelers": 2,
+  "currency": "USD",
+  "budget": {
+    "estimated_total": 4200,
+    "breakdown": [
+      { "id": "b1", "category": "Flights", "amount": 2400, "notes": "Round trip, economy" },
+      { "id": "b2", "category": "Lodging", "amount": 900, "notes": "Ryokan | 3 nights" }
+    ],
+    "notes": "Excludes travel insurance."
+  },
+  "flights": [
+    {
+      "id": "f1",
+      "from": "SFO",
+      "to": "KIX",
+      "date": "2027-04-01",
+      "carrier": "JAL",
+      "est_price": 2400,
+      "booking_url": "https://example.com/flights/sfo-kix",
+      "notes": "Nonstop"
+    }
+  ],
+  "lodging": [
+    {
+      "id": "l1",
+      "name": "Gion Ryokan",
+      "area": "Gion",
+      "check_in": "2027-04-02",
+      "check_out": "2027-04-05",
+      "nightly_price": 300,
+      "booking_url": "https://example.com/stay/gion",
+      "notes": null
+    }
+  ],
+  "days": [
+    {
+      "id": "d1",
+      "day": 1,
+      "date": "2027-04-02",
+      "location": "Kyoto",
+      "title": "Arrival and Nishiki Market",
+      "activities": [
+        {
+          "id": "a1",
+          "time": "15:00",
+          "name": "Nishiki Market",
+          "description": "Snack crawl through the covered market, try tamagoyaki.",
+          "category": "food",
+          "est_cost": 60,
+          "url": "https://example.com/nishiki"
+        },
+        {
+          "id": "a2",
+          "time": "19:00",
+          "name": "Pontocho dinner",
+          "description": "Izakaya hopping along the alley, by the river.",
+          "category": "food",
+          "est_cost": 120,
+          "url": null
+        }
+      ]
+    },
+    {
+      "id": "d2",
+      "day": 2,
+      "date": "2027-04-03",
+      "location": "Nara",
+      "title": "Deer and Todai-ji",
+      "activities": [
+        {
+          "id": "a3",
+          "time": "Morning",
+          "name": "Todai-ji",
+          "description": "The giant Buddha hall.",
+          "category": "sightseeing",
+          "est_cost": 20,
+          "url": "javascript:alert(1)"
+        }
+      ]
+    }
+  ],
+  "tips": ["Get an ICOCA card for transit."],
+  "sources": [{ "title": "Kyoto travel guide", "url": "https://example.com/guide" }]
+}
