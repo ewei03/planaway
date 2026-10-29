@@ -9,10 +9,17 @@ import { GroupDialog } from "./GroupDialog";
 import { ItineraryPane } from "./ItineraryPane";
 import { MapsProvider, type MapsConfig } from "./places";
 import { Sidebar } from "./Sidebar";
+import { clampSplit, SplitHandle } from "./SplitHandle";
 import { StartScreen } from "./StartScreen";
 
 const POLL_MS = 4000;
 const ASK_ABOUT_COMMENTS = "Please go through the open comments and update the plan where it makes sense.";
+// Below this width the sidebar is a drawer (see globals.css) instead of a column.
+const DRAWER_QUERY = "(max-width: 760px)";
+const COLLAPSED_KEY = "planaway:sidebar-collapsed";
+// The chat's share of the workspace width; the itinerary gets the rest.
+const SPLIT_KEY = "planaway:chat-split";
+const DEFAULT_SPLIT = 0.44;
 
 export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }) {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
@@ -24,8 +31,11 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   const [live, setLive] = useState<LiveTurn[]>([]);
   const [streamingHere, setStreamingHere] = useState(false);
   const [status, setStatus] = useState("");
+  // sidebarOpen is the phone drawer; sidebarCollapsed hides the desktop column.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showItinerary, setShowItinerary] = useState(false);
+  const [split, setSplit] = useState(DEFAULT_SPLIT);
   const [managingGroup, setManagingGroup] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const dialogs = useDialogs();
@@ -40,6 +50,40 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Remember the collapsed sidebar across visits. Read after mount so the
+  // server-rendered markup matches the first client render.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(COLLAPSED_KEY) === "1") setSidebarCollapsed(true);
+      const saved = Number(localStorage.getItem(SPLIT_KEY));
+      if (saved > 0) setSplit(clampSplit(saved));
+    } catch {}
+  }, []);
+
+  const resizeSplit = (value: number) => {
+    setSplit(value);
+    try {
+      localStorage.setItem(SPLIT_KEY, String(value));
+    } catch {}
+  };
+
+  const collapseSidebar = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {}
+  };
+
+  const showSidebar = () => {
+    collapseSidebar(false);
+    setSidebarOpen(true);
+  };
+
+  const hideSidebar = () => {
+    if (window.matchMedia(DRAWER_QUERY).matches) setSidebarOpen(false);
+    else collapseSidebar(true);
+  };
 
   const loadGroups = useCallback(() => {
     api<GroupSummary[]>("/api/groups").then(
@@ -241,7 +285,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   return (
     <MapsProvider value={maps}>
       <div
-        className={`app ${sidebarOpen ? "sidebar-open" : ""}`}
+        className={`app ${sidebarOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
         onClick={(e) => {
           if (sidebarOpen && !(e.target as Element).closest(".sidebar, .open-sidebar")) setSidebarOpen(false);
         }}
@@ -258,11 +302,15 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
           onNewGroup={newGroup}
           onManageGroup={setManagingGroup}
           onSignOut={() => signOut({ redirectTo: "/login" })}
+          onHide={hideSidebar}
         />
 
         <main className="main">
           {trip ? (
-            <section className={`workspace ${showItinerary ? "show-itinerary" : ""}`}>
+            <section
+              className={`workspace ${showItinerary ? "show-itinerary" : ""}`}
+              style={{ "--chat-fr": `${split}fr`, "--pane-fr": `${1 - split}fr` } as React.CSSProperties}
+            >
               <Chat
                 trip={trip}
                 user={user}
@@ -271,9 +319,10 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
                 status={statusText}
                 onSend={(text) => sendMessage(trip.id, text)}
                 onRename={rename}
-                onOpenSidebar={() => setSidebarOpen(true)}
+                onOpenSidebar={showSidebar}
                 onShowItinerary={() => setShowItinerary(true)}
               />
+              <SplitHandle split={split} onChange={resizeSplit} onReset={() => resizeSplit(DEFAULT_SPLIT)} />
               <ItineraryPane
                 trip={trip}
                 user={user}
@@ -294,7 +343,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
               groupId={startGroupId ?? ""}
               onGroupChange={setNewTripGroup}
               onStart={startTrip}
-              onOpenSidebar={() => setSidebarOpen(true)}
+              onOpenSidebar={showSidebar}
               loading={!groupsLoaded}
             />
           )}

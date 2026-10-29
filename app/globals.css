@@ -38,7 +38,7 @@ html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 var(--font-sans, system-ui), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 h1, h2, h3 { line-height: 1.25; margin: 0; }
 a { color: var(--accent); }
@@ -59,6 +59,13 @@ a { color: var(--accent); }
   overflow-y: auto;
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; }
+.brand .hide-sidebar { margin-left: auto; font-size: 14px; }
+@media (min-width: 761px) {
+  .app.sidebar-collapsed { grid-template-columns: 1fr; }
+  .app.sidebar-collapsed .sidebar { display: none; }
+  .app.sidebar-collapsed .open-sidebar { display: inline-block; }
+  .app.sidebar-collapsed #start-show-sidebar { margin-bottom: 16px; }
+}
 .logo {
   display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
   background: var(--accent); color: var(--accent-text); font-size: 16px;
@@ -127,8 +134,20 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .hint { font-size: 12px; margin: 8px 0 0; text-align: right; }
 
 /* Workspace */
-.workspace { display: grid; grid-template-columns: minmax(340px, 1fr) minmax(380px, 1.25fr); height: 100%; }
-.chat { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); height: 100vh; }
+.workspace {
+  display: grid; height: 100%;
+  grid-template-columns: minmax(340px, var(--chat-fr, 0.44fr)) 7px minmax(380px, var(--pane-fr, 0.56fr));
+}
+.chat { display: flex; flex-direction: column; min-width: 0; height: 100vh; }
+/* The divider between chat and itinerary: a 1px line with a wider grab area. */
+.split-handle { position: relative; cursor: col-resize; touch-action: none; margin: 0 -3px; z-index: 2; }
+.split-handle::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%);
+  background: var(--border); transition: background 0.15s, width 0.15s;
+}
+.split-handle:hover::after, .split-handle.dragging::after, .split-handle:focus-visible::after { width: 3px; background: var(--accent); }
+.split-handle:focus-visible { outline: none; }
+.split-handle.dragging ~ * { pointer-events: none; user-select: none; }
 .chat-header { display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .trip-title-input { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; padding: 2px 6px; }
 .trip-title { font-size: 17px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
@@ -372,6 +391,7 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 }
 /* Info windows are always light, whatever the app theme. */
 .map-info { display: flex; flex-direction: column; gap: 3px; max-width: 220px; color: #1d1c1a; font: 13px/1.4 system-ui, sans-serif; }
+.maplibregl-map { font-family: inherit; }
 .map-info img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; margin-bottom: 4px; }
 .map-info-sub { color: #6b6860; }
 .map-info a { color: #0f6e63; }
@@ -380,6 +400,7 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
   .comments-panel { position: absolute; inset: 0; width: auto; z-index: 5; border-left: 0; }
   .pane-body { position: relative; }
   .workspace { grid-template-columns: 1fr; }
+  .split-handle { display: none; }
   .itinerary-pane { display: none; }
   .workspace.show-itinerary .chat { display: none; }
   .workspace.show-itinerary .itinerary-pane { display: flex; }

@@ -246,7 +246,7 @@ export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSid
 
             <div className="form-actions">
               <button className="btn ghost" type="button" disabled={starting || loading} onClick={() => start(surprisePrompt(form))}>
-                🎲 Surprise me
+                🎲 Surprise me!
               </button>
               <button className="btn primary" type="submit" disabled={starting || loading}>
                 Build my trip

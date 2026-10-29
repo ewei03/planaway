@@ -2,9 +2,18 @@
 
 A collaborative trip-planning agent powered by Claude. Describe a trip, or describe what you like and let it pick, and it researches flights, stays, and things to do on the web. It then builds a day-by-day itinerary. Plan it together with your group: everyone shares the conversation with the agent, comments on specific parts of the plan, and the agent works the comments into the next revision.
 
+## Tech stack
+
+- **App:** Next.js 16 (App Router), React 19, TypeScript
+- **AI:** Claude (`claude-opus-5-5`) via the Anthropic SDK, with server-side web search and fetch
+- **Data:** Drizzle ORM on Postgres, or PGlite (embedded Postgres) when no database is configured; Zod for validation
+- **Auth:** Auth.js (email and password, bcrypt)
+- **Maps:** MapLibre GL, OpenFreeMap tiles, Nominatim, and Wikimedia Commons photos
+- **Testing:** Vitest, Testing Library, and Playwright
+
 ## Setup
 
-Built with Next.js (App Router), React, Auth.js, Drizzle, and Postgres. Requires Node 20.12+ and an [Anthropic API key](https://console.anthropic.com/).
+Requires Node 20.12+ and an [Anthropic API key](https://console.anthropic.com/).
 
 ```sh
 npm install
@@ -119,5 +128,3 @@ Settings in `.env`:
 - Prices come from search results and pages the agent reads, so they are estimates. Confirm before booking.
 - Every turn calls the API with web search enabled. Web searches are billed per search on top of tokens.
 - Before running this on a public server, add rate limiting on sign-in and registration, email verification, and password reset. None of these exist yet.
-
-TODO: Make it more visually appealing for UI/UX purposes

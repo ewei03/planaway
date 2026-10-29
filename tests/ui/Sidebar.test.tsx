@@ -28,6 +28,7 @@ function setup() {
     onNewGroup: vi.fn(),
     onManageGroup: vi.fn(),
     onSignOut: vi.fn(),
+    onHide: vi.fn(),
   };
   render(<Sidebar {...props} />);
   return props;
@@ -45,9 +46,9 @@ describe("Sidebar", () => {
     expect(screen.getByText("No trips yet.")).toBeInTheDocument();
   });
 
-  it("only offers new trips in groups you can edit, and settings for shared groups", () => {
+  it("only offers new trips in shared groups you can edit, and settings for shared groups", () => {
     setup();
-    expect(screen.getByRole("button", { name: "New trip in Personal" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New trip in Personal" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New trip in Family" })).toBeNull();
     expect(screen.getByRole("button", { name: "Manage Family" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Manage Personal" })).toBeNull();
@@ -65,5 +66,7 @@ describe("Sidebar", () => {
     expect(props.onNewGroup).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(props.onSignOut).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Hide trips" }));
+    expect(props.onHide).toHaveBeenCalled();
   });
 });

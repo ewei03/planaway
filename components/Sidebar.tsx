@@ -11,9 +11,10 @@ interface Props {
   onNewGroup: () => void;
   onManageGroup: (groupId: string) => void;
   onSignOut: () => void;
+  onHide: () => void;
 }
 
-export function Sidebar({ user, groups, activeId, onSelect, onNewTrip, onNewGroup, onManageGroup, onSignOut }: Props) {
+export function Sidebar({ user, groups, activeId, onSelect, onNewTrip, onNewGroup, onManageGroup, onSignOut, onHide }: Props) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -21,6 +22,9 @@ export function Sidebar({ user, groups, activeId, onSelect, onNewTrip, onNewGrou
           ✈
         </span>
         <span>PlanAway</span>
+        <button className="icon-btn hide-sidebar" title="Hide trips" aria-label="Hide trips" onClick={onHide}>
+          ✕
+        </button>
       </div>
       <button className="btn primary block" onClick={() => groups[0] && onNewTrip(groups[0].id)}>
         + New trip
@@ -34,7 +38,7 @@ export function Sidebar({ user, groups, activeId, onSelect, onNewTrip, onNewGrou
                 {g.personal ? "Personal" : g.name}
                 {!g.personal && <span className="member-count"> · {g.memberCount}</span>}
               </h2>
-              {canEdit(g.role) && (
+              {!g.personal && canEdit(g.role) && (
                 <button className="icon-btn" title={`New trip in ${g.name}`} aria-label={`New trip in ${g.name}`} onClick={() => onNewTrip(g.id)}>
                   +
                 </button>
