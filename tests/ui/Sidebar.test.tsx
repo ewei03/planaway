@@ -85,6 +85,18 @@ describe("Sidebar", () => {
     localStorage.removeItem("planaway:trip-sort");
   });
 
+  it("shows each trip's destination photo, or its initial without one", () => {
+    const photo = { src: "big.jpg", thumb: "kyoto-thumb.jpg", author: "Aiko", license: "CC BY 4.0", sourceUrl: null };
+    const place = { id: "node/1", name: "Kyoto", address: null, lat: 0, lng: 0, mapsUrl: null, photos: [photo] };
+    const { container } = render(
+      <Sidebar {...setupProps({ trips: [{ ...trip, id: "k", title: "Kyoto", destinations: ["Kyoto"] }, { ...trip, id: "d", title: "draft" }], lookup: (q) => (q.endsWith("Kyoto") ? place : null) })} />,
+    );
+    const thumbs = container.querySelectorAll(".t-thumb");
+    expect(thumbs[0].querySelector("img")).toHaveAttribute("src", "kyoto-thumb.jpg");
+    expect(thumbs[0]).toHaveAttribute("title", "Photo: Aiko, CC BY 4.0");
+    expect(thumbs[1]).toHaveTextContent("D");
+  });
+
   it("shows an empty state when you have no trips of your own", () => {
     setup({ trips: trips.filter((t) => t.role !== "owner") });
     expect(screen.getByText("No trips yet.")).toBeInTheDocument();
@@ -187,7 +199,7 @@ describe("Sidebar", () => {
     const props = setup();
     await userEvent.click(screen.getByRole("button", { name: /^Kyoto/ }));
     expect(props.onSelect).toHaveBeenCalledWith("t1");
-    await userEvent.click(screen.getByRole("button", { name: "+ New trip" }));
+    await userEvent.click(screen.getByRole("button", { name: "New trip" }));
     expect(props.onNewTrip).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(props.onSignOut).toHaveBeenCalled();

@@ -2,7 +2,9 @@
 
 import { signIn } from "next-auth/react";
 import { useState, type FormEvent } from "react";
+import { AuthArt } from "./AuthArt";
 import { api } from "./client";
+import { LogoIcon } from "./icons";
 import { SiteFooter } from "./SiteFooter";
 
 export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
@@ -38,61 +40,64 @@ export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
   const registering = mode === "register";
 
   return (
-    <main className="auth-page">
-      <div className="auth-card card">
-        <div className="brand">
-          <span className="logo" aria-hidden="true">
-            ✈
-          </span>
-          <span>PlanAway</span>
+    <div className="auth-split">
+      <AuthArt />
+      <main className="auth-page">
+        <div className="auth-card">
+          <div className="brand">
+            <span className="logo" aria-hidden="true">
+              <LogoIcon />
+            </span>
+            <span className="brand-name">PlanAway</span>
+          </div>
+          <h1>{registering ? "Create your account" : "Welcome back"}</h1>
+          <p className="muted">{registering ? "Plan trips with an AI agent, together with your friends." : "Sign in to your trips."}</p>
+
+          <form onSubmit={submit}>
+            {registering && (
+              <>
+                <label htmlFor="name">Name</label>
+                <input id="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} />
+              </>
+            )}
+            <label htmlFor="email">Email</label>
+            <input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <label htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              autoComplete={registering ? "new-password" : "current-password"}
+              minLength={registering ? 8 : undefined}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            {registering && <p className="muted small">At least 8 characters.</p>}
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button className="btn primary block" disabled={busy}>
+              {busy ? "One moment…" : registering ? "Create account" : "Sign in"}
+            </button>
+          </form>
+
+          <p className="auth-switch muted">
+            {registering ? "Already have an account?" : "New to PlanAway?"}{" "}
+            <button
+              className="link-btn"
+              onClick={() => {
+                setMode(registering ? "signin" : "register");
+                setError(null);
+              }}
+            >
+              {registering ? "Sign in" : "Create an account"}
+            </button>
+          </p>
         </div>
-        <h1>{registering ? "Create your account" : "Welcome back"}</h1>
-        <p className="muted">{registering ? "Plan trips with an AI agent, together with your friends." : "Sign in to your trips."}</p>
-
-        <form onSubmit={submit}>
-          {registering && (
-            <>
-              <label htmlFor="name">Name</label>
-              <input id="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} />
-            </>
-          )}
-          <label htmlFor="email">Email</label>
-          <input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete={registering ? "new-password" : "current-password"}
-            minLength={registering ? 8 : undefined}
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {registering && <p className="muted small">At least 8 characters.</p>}
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
-          <button className="btn primary block" disabled={busy}>
-            {busy ? "One moment…" : registering ? "Create account" : "Sign in"}
-          </button>
-        </form>
-
-        <p className="auth-switch muted">
-          {registering ? "Already have an account?" : "New to PlanAway?"}{" "}
-          <button
-            className="link-btn"
-            onClick={() => {
-              setMode(registering ? "signin" : "register");
-              setError(null);
-            }}
-          >
-            {registering ? "Sign in" : "Create an account"}
-          </button>
-        </p>
-      </div>
-      <SiteFooter />
-    </main>
+        <SiteFooter />
+      </main>
+    </div>
   );
 }

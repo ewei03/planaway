@@ -1,7 +1,63 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { areaQuery } from "@/lib/route";
+import { ArrowRightIcon, DiceIcon, MenuIcon } from "./icons";
+import { credit, type PlaceLookup } from "./places";
 import { SiteFooter } from "./SiteFooter";
+
+/** Starting points under the idea box. `place` is looked up for the card's photo. */
+export const INSPIRATION = [
+  {
+    place: "Lisbon",
+    title: "Tiles and tascas in Lisbon",
+    meta: "4 days · Food · Culture",
+    prompt: "4 days in Lisbon for two: tiled old neighborhoods, viewpoints, and lots of good food.",
+    tint: "#BFD9E6",
+  },
+  {
+    place: "Tromsø",
+    title: "Northern lights in Tromsø",
+    meta: "5 days · Winter · Nature",
+    prompt: "5 days in Tromsø in February to see the northern lights, with a fjord trip and a husky ride.",
+    tint: "#C8CDEB",
+  },
+  {
+    place: "Kyoto",
+    title: "Temples and izakayas in Kyoto",
+    meta: "6 days · Food · History",
+    prompt: "6 days in Kyoto: temples and gardens by day, izakayas and markets by night.",
+    tint: "#E8C3A8",
+  },
+  {
+    place: "Torres del Paine",
+    title: "Hiking Torres del Paine",
+    meta: "8 days · Hiking · Outdoors",
+    prompt: "8 days hiking in Torres del Paine, Patagonia, staying in refugios along the W Trek.",
+    tint: "#C9DCC4",
+  },
+  {
+    place: "Marrakech",
+    title: "Souks and riads in Marrakech",
+    meta: "4 days · Markets · Design",
+    prompt: "4 days in Marrakech staying in a riad, with the souks, gardens, and a day trip to the Atlas Mountains.",
+    tint: "#F0D9A8",
+  },
+  {
+    place: "Oaxaca",
+    title: "Mezcal and markets in Oaxaca",
+    meta: "5 days · Food · Craft",
+    prompt: "5 days in Oaxaca for food lovers: markets, mezcal, cooking classes, and craft villages.",
+    tint: "#E6CBE0",
+  },
+] as const;
+
+export const INSPIRATION_QUERIES = INSPIRATION.map((i) => areaQuery(i.place));
+
+function greeting(hour: number): string {
+  if (hour < 5 || hour >= 18) return "Good evening";
+  return hour < 12 ? "Good morning" : "Good afternoon";
+}
 
 const INTERESTS = [
   ["food & drink", "Food & drink"],
@@ -78,13 +134,28 @@ function surprisePrompt(f: BuildForm): string {
 interface Props {
   onStart: (prompt: string) => Promise<void>;
   onOpenSidebar: () => void;
+  /** The signed-in user's name, for the greeting. */
+  userName?: string;
+  /** Place photos for the inspiration cards. */
+  lookup?: PlaceLookup;
 }
 
-export function StartScreen({ onStart, onOpenSidebar }: Props) {
+export function StartScreen({ onStart, onOpenSidebar, userName, lookup }: Props) {
   const [tab, setTab] = useState<"idea" | "build">("idea");
   const [idea, setIdea] = useState("");
   const [form, setForm] = useState<BuildForm>(EMPTY_FORM);
   const [starting, setStarting] = useState(false);
+  // Set after mount: the server doesn't know the viewer's time of day.
+  const [hello, setHello] = useState("Welcome back");
+  const ideaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => setHello(greeting(new Date().getHours())), []);
+
+  const pickInspiration = (prompt: string) => {
+    setTab("idea");
+    setIdea(prompt);
+    // The textarea mounts with the tab, so focus it on the next frame.
+    requestAnimationFrame(() => ideaRef.current?.focus());
+  };
 
   const set = <K extends keyof BuildForm>(key: K, value: BuildForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   const toggleInterest = (value: string) =>
@@ -113,12 +184,16 @@ export function StartScreen({ onStart, onOpenSidebar }: Props) {
     <section className="start">
       <div className="start-inner">
         <button className="btn mobile-only open-sidebar" id="start-show-sidebar" onClick={onOpenSidebar}>
-          ☰ Your trips
+          <MenuIcon size={16} /> Your trips
         </button>
+        <p className="eyebrow">
+          {hello}
+          {userName ? `, ${userName.split(" ")[0]}` : ""}
+        </p>
         <h1>Where to next?</h1>
-        <p className="muted">
+        <p className="muted start-lede">
           Describe a trip you have in mind, or tell PlanAway what you like and let it plan one for you. It researches
-          flights, stays, and things to do on the web, then builds an itinerary you can refine, save, and export.
+          flights, stays, and things to do on the web, then builds an itinerary you can refine together.
         </p>
 
         <div className="tabs" role="tablist">
@@ -145,15 +220,16 @@ export function StartScreen({ onStart, onOpenSidebar }: Props) {
             <label htmlFor="idea-text">Your trip idea</label>
             <textarea
               id="idea-text"
-              rows={5}
+              ref={ideaRef}
+              rows={4}
               required
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
               placeholder="e.g. 10 days in Japan next April for two, Tokyo and Kyoto, love food and design, about $6,000 total from San Francisco"
             />
             <div className="form-actions">
-              <button className="btn primary" type="submit" disabled={starting}>
-                Plan this trip
+              <button className="btn primary big" type="submit" disabled={starting}>
+                Plan this trip <ArrowRightIcon size={16} />
               </button>
             </div>
           </form>
@@ -226,18 +302,46 @@ export function StartScreen({ onStart, onOpenSidebar }: Props) {
             />
 
             <div className="form-actions">
-              <button className="btn ghost" type="button" disabled={starting} onClick={() => start(surprisePrompt(form))}>
-                🎲 Surprise me!
+              <button className="btn surprise big" type="button" disabled={starting} onClick={() => start(surprisePrompt(form))}>
+                <DiceIcon /> Surprise me!
               </button>
-              <button className="btn primary" type="submit" disabled={starting}>
-                Build my trip
+              <button className="btn primary big" type="submit" disabled={starting}>
+                Build my trip <ArrowRightIcon size={16} />
               </button>
             </div>
-            <p className="hint muted">Surprise me picks a destination at random, using only the origin, budget, and dates you filled in.</p>
+            <p className="hint muted"><b>Surprise me!</b> picks a destination at random, using only the origin, budget, and dates you filled in.</p>
           </form>
         )}
+
+        <section className="inspiration" aria-labelledby="inspiration-heading">
+          <div className="inspiration-head">
+            <h2 id="inspiration-heading">Need inspiration?</h2>
+            <span className="muted small">Pick one to start from it</span>
+          </div>
+          <div className="inspiration-grid">
+            {INSPIRATION.map((i) => (
+              <InspirationCard key={i.place} idea={i} lookup={lookup} onPick={() => pickInspiration(i.prompt)} />
+            ))}
+          </div>
+        </section>
       </div>
       <SiteFooter />
     </section>
+  );
+}
+
+function InspirationCard({ idea, lookup, onPick }: { idea: (typeof INSPIRATION)[number]; lookup?: PlaceLookup; onPick: () => void }) {
+  const [broken, setBroken] = useState(false);
+  const photo = lookup?.(areaQuery(idea.place))?.photos[0];
+  return (
+    <button type="button" className="inspiration-card" onClick={onPick}>
+      <span className="inspiration-photo" style={{ background: idea.tint }} title={photo && !broken ? credit(photo) : undefined}>
+        {photo && !broken ? <img src={photo.thumb} alt="" loading="lazy" onError={() => setBroken(true)} /> : <span aria-hidden="true">{idea.place}</span>}
+      </span>
+      <span className="inspiration-text">
+        <span className="inspiration-title">{idea.title}</span>
+        <span className="inspiration-meta">{idea.meta}</span>
+      </span>
+    </button>
   );
 }

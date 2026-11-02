@@ -64,7 +64,7 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));
     await userEvent.type(screen.getByLabelText("Leaving from"), "Denver");
     await userEvent.click(screen.getByLabelText("Nightlife"));
-    await userEvent.click(screen.getByRole("button", { name: "🎲 Surprise me!" }));
+    await userEvent.click(screen.getByRole("button", { name: "Surprise me!" }));
     const p = prompt(onStart);
     expect(p).toMatch(/^Surprise me!/);
     expect(p).toContain("Leaving from: Denver.");

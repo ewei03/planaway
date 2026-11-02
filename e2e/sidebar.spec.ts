@@ -5,7 +5,7 @@ test("collapse and restore the sidebar on desktop, remembered across reloads", a
   await register(page, account("Sidebar"));
   await planTrip(page);
 
-  const newTrip = page.getByRole("button", { name: "+ New trip" });
+  const newTrip = page.getByRole("button", { name: "New trip", exact: true });
   await expect(newTrip).toBeVisible();
   await expect(page.getByRole("button", { name: "Show trips" })).toBeHidden();
 
@@ -46,7 +46,7 @@ test("drag the divider to resize the chat and itinerary, remembered across reloa
   expect(Math.abs((await chat.boundingBox())!.width - before)).toBeLessThan(5);
 });
 
-test("rename a trip from its menu, and see when it was last updated", async ({ page }) => {
+test("rename a trip from its menu, and see when it was last updated in the sidebar", async ({ page }) => {
   await register(page, account("Rename"));
   await planTrip(page);
 
@@ -61,7 +61,6 @@ test("rename a trip from its menu, and see when it was last updated", async ({ p
 
   await expect(sidebar.getByRole("button", { name: /^Birthday trip/ })).toBeVisible();
   await expect(page.locator(".chat .trip-title")).toHaveText("Birthday trip");
-  await expect(page.locator(".chat .trip-meta")).toHaveText("Updated just now");
 });
 
 test("hide the chat so the itinerary fills the width, remembered across reloads", async ({ page }) => {
@@ -83,7 +82,7 @@ test("hide the chat so the itinerary fills the width, remembered across reloads"
   await expect(composer).toBeHidden();
   await page.screenshot({ path: "C:/Users/enoch/AppData/Local/Temp/claude/E--Users-Enoch-Documents-PlanAway/49d044a6-5bd3-4720-923d-752ba3e695e9/scratchpad/both-hidden.png" });
   await page.getByRole("button", { name: "Show trips" }).click();
-  await expect(page.getByRole("button", { name: "+ New trip" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New trip", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Show chat" }).click();
   await expect(composer).toBeVisible();
   await expect(page.getByRole("button", { name: "Show chat" })).toBeHidden();

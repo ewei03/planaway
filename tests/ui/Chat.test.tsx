@@ -26,6 +26,21 @@ function setup(overrides: Partial<ComponentProps<typeof Chat>> = {}) {
 const composer = () => screen.getByPlaceholderText(/Refine the plan/);
 
 describe("Chat", () => {
+  it("offers quick replies to editors once there's a plan", async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole("button", { name: "Make it cheaper" }));
+    expect(props.onSend).toHaveBeenCalledWith("Make it cheaper");
+  });
+
+  it.each([
+    ["viewers", { trip: tripView({ role: "viewer" }) }],
+    ["trips with no plan yet", { trip: tripView({ itinerary: null }) }],
+    ["while the agent works", { working: true }],
+  ])("hides quick replies for %s", (_name, overrides) => {
+    setup(overrides);
+    expect(screen.queryByRole("button", { name: "Make it cheaper" })).toBeNull();
+  });
+
   it("can be hidden", async () => {
     const props = setup();
     await userEvent.click(screen.getByRole("button", { name: "Hide chat" }));

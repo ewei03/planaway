@@ -15,9 +15,29 @@ describe("ItineraryView", () => {
     setup();
     expect(screen.getByRole("heading", { name: "Kyoto Food Weekend" })).toBeInTheDocument();
     expect(screen.getByText(/temples, markets/)).toBeInTheDocument();
-    expect(screen.getByText("From:").parentElement).toHaveTextContent("San Francisco");
-    expect(screen.getByText("Dates:").parentElement).toHaveTextContent("2027-04-02 → 2027-04-04");
-    expect(screen.getByText("Days:").parentElement).toHaveTextContent("2");
+    expect(screen.getByText("Kyoto · Nara")).toBeInTheDocument();
+    const stat = (label: string) => screen.getByText(label).closest(".stat");
+    expect(stat("From")).toHaveTextContent("San Francisco");
+    expect(stat("Dates")).toHaveTextContent(/Apr 2 – 4\s*2 days/);
+    expect(stat("Travelers")).toHaveTextContent("2 people");
+    expect(stat("Est. total")).toHaveTextContent("$4,200");
+  });
+
+  it("sets the estimated total apart, with the cost per person", () => {
+    setup();
+    const total = screen.getByText("Estimated total").closest(".budget-total");
+    expect(total).toHaveTextContent(/\S*4,200/);
+    expect(total).toHaveTextContent(/About \S*2,100 per person, for 2 travelers/);
+  });
+
+  it("draws the budget as a bar, in the same colors as the budget rows", () => {
+    setup();
+    expect(screen.getByRole("img", { name: /^Budget: Flights \S*2,400, Lodging \S*900$/ })).toBeInTheDocument();
+  });
+
+  it("marks each activity with its category", () => {
+    setup();
+    expect(screen.getAllByRole("img", { name: "food" }).length).toBeGreaterThan(0);
   });
 
   it("renders every section", () => {
@@ -27,6 +47,16 @@ describe("ItineraryView", () => {
     }
     expect(screen.getByText("Nishiki Market")).toBeInTheDocument();
     expect(screen.getByText("Estimated total")).toBeInTheDocument();
+  });
+
+  it("collapses a box from its heading", async () => {
+    setup();
+    const toggle = within(screen.getByRole("heading", { name: "Budget" })).getByRole("button");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // Collapsed content is inert, so its buttons leave the tab order.
+    expect(screen.getByRole("button", { name: "Comment on Budget: Flights" }).closest("[inert]")).not.toBeNull();
   });
 
   it("hides empty optional sections", () => {
@@ -74,34 +104,29 @@ describe("ItineraryView", () => {
     expect(within(sources).getByText("Sketchy")).toBeInTheDocument();
   });
 
-  it("collapses each box as a whole, starting with tips open and sources closed", async () => {
+  it("starts a new itinerary with every box expanded, sources included", () => {
     localStorage.clear();
-    setup();
-    const tipsToggle = screen.getByRole("button", { name: "Tips" });
-    const sourcesToggle = screen.getByRole("button", { name: /^Sources/ });
-    expect(tipsToggle).toHaveAttribute("aria-expanded", "true");
-    expect(sourcesToggle).toHaveAttribute("aria-expanded", "false");
-    // Collapsed content is inert, so its links can't be tabbed to.
-    expect(document.getElementById(sourcesToggle.getAttribute("aria-controls")!)).toHaveAttribute("inert");
-
-    await userEvent.click(sourcesToggle);
-    expect(sourcesToggle).toHaveAttribute("aria-expanded", "true");
-    expect(document.getElementById(sourcesToggle.getAttribute("aria-controls")!)).not.toHaveAttribute("inert");
-    await userEvent.click(tipsToggle);
-    expect(tipsToggle).toHaveAttribute("aria-expanded", "false");
+    render(<ItineraryView itinerary={sampleItinerary()} counts={new Map()} onComment={vi.fn()} tripId="new-trip" map={<div />} />);
+    for (const name of ["Route", "Flights", "Where to stay", "Day by day", "Budget", "Tips", "Sources"]) {
+      expect(within(screen.getByRole("heading", { name })).getByRole("button")).toHaveAttribute("aria-expanded", "true");
+    }
   });
 
-  it("remembers which boxes were open", async () => {
+  it("remembers collapsed boxes per trip, so other trips still open expanded", async () => {
     localStorage.clear();
-    const { unmount } = render(
-      <ItineraryView itinerary={sampleItinerary()} counts={new Map()} onComment={vi.fn()} lookup={fullLookup()} map={null} />,
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Tips" }));
-    await userEvent.click(screen.getByRole("button", { name: /^Sources/ }));
-    unmount();
-    setup();
-    expect(screen.getByRole("button", { name: "Tips" })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("button", { name: /^Sources/ })).toHaveAttribute("aria-expanded", "true");
+    const view = (tripId: string) =>
+      render(<ItineraryView itinerary={sampleItinerary()} counts={new Map()} onComment={vi.fn()} tripId={tripId} />);
+    const tips = () => screen.getByRole("button", { name: "Tips" });
+    const first = view("trip-a");
+    await userEvent.click(tips());
+    first.unmount();
+
+    const again = view("trip-a");
+    expect(tips()).toHaveAttribute("aria-expanded", "false");
+    again.unmount();
+
+    view("trip-b");
+    expect(tips()).toHaveAttribute("aria-expanded", "true");
     localStorage.clear();
   });
 
@@ -109,8 +134,7 @@ describe("ItineraryView", () => {
     const { onComment } = setup();
     await userEvent.click(screen.getByRole("button", { name: "Comment on Day 1 · Nishiki Market" }));
     expect(onComment).toHaveBeenLastCalledWith({ type: "activity", id: "a1", label: "Day 1 · Nishiki Market" });
-    await userEvent.click(screen.getByRole("button", { name: "Comment on Whole trip" }));
-    expect(onComment).toHaveBeenLastCalledWith({ type: "trip", id: null, label: "Whole trip" });
+    expect(screen.queryByRole("button", { name: "Comment on Whole trip" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Comment on Flight SFO → KIX" }));
     expect(onComment).toHaveBeenLastCalledWith({ type: "flight", id: "f1", label: "Flight SFO → KIX" });
   });
@@ -136,9 +160,26 @@ describe("ItineraryView", () => {
   });
 
   it("shows open comment counts on items", () => {
-    setup(new Map([["day:d2", 2]]));
-    const btn = screen.getByRole("button", { name: "2 comments on Day 2: Deer and Todai-ji" });
+    setup(new Map([["activity:a3", 2]]));
+    const btn = screen.getByRole("button", { name: "2 comments on Day 2 · Todai-ji" });
     expect(within(btn).getByText("2")).toBeInTheDocument();
     expect(btn).toHaveClass("has");
+  });
+
+  it("heads each day as one line, e.g. Day 1: Arrival", () => {
+    setup();
+    expect(screen.getByRole("heading", { name: "Day 1: Arrival and Nishiki Market" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Day 2: Deer and Todai-ji" })).toBeInTheDocument();
+  });
+
+  it("takes comments on activities, not on whole days", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: /^Comment on Day \d+:/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Comment on Day 2 · Todai-ji" })).toBeInTheDocument();
+  });
+
+  it("shows the nightly price with a quieter unit", () => {
+    setup();
+    expect(screen.getByText("/ night", { exact: false })).toHaveClass("price-unit");
   });
 });

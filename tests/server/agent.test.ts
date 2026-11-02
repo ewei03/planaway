@@ -153,6 +153,16 @@ describe("runTurn", () => {
     expect(second.tools.map((t) => t.name)).toEqual(["web_search", "web_fetch", "update_itinerary", "reply_to_comments"]);
   });
 
+  it("drops stale thinking blocks instead of failing older trips", async () => {
+    // Thinking blocks are tied to the tool list they were written with, so a
+    // schema change would otherwise reject every trip with earlier turns.
+    script({ text: ["ok"] });
+    await run();
+    const req = streamMock.mock.calls[0][0] as { thinking: unknown; betas: string[] };
+    expect(req.thinking).toEqual({ type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } });
+    expect(req.betas).toContain("thinking-binding-controls-2026-08-01");
+  });
+
   it("returns schema errors to the model and keeps the old itinerary", async () => {
     const old = sampleItinerary();
     script({ blocks: [toolUse("update_itinerary", { title: "broken" })], stop_reason: "tool_use" }, { text: ["Sorry"] });

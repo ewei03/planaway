@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("the itinerary shows destination photos and thumbnails, with credits", async ({ page }) => {
-  const hero = page.locator(".hero");
+  const hero = page.locator(".cover");
   await expect(hero.getByRole("button", { name: "Photos of Kyoto" })).toBeVisible();
   await expect(hero.getByRole("button", { name: "Photos of Nara" })).toBeVisible();
   await expect(hero.getByRole("link", { name: "Photo: Mock Photographer, CC BY 4.0" }).first()).toHaveAttribute(

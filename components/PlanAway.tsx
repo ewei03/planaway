@@ -1,7 +1,8 @@
 "use client";
 
 import { signOut } from "next-auth/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { areaQuery } from "@/lib/route";
 import { Chat, type LiveTurn } from "./Chat";
 import {
   api,
@@ -16,14 +17,15 @@ import {
 } from "./client";
 import { useDialogs } from "./Dialogs";
 import { ItineraryPane } from "./ItineraryPane";
-import { MapsProvider, type MapsConfig } from "./places";
+import { MapsProvider, usePlaceQueries, type MapsConfig } from "./places";
 import { ShareDialog } from "./ShareDialog";
 import { Sidebar } from "./Sidebar";
 import { clampSplit, SplitHandle } from "./SplitHandle";
-import { StartScreen } from "./StartScreen";
+import { INSPIRATION_QUERIES, StartScreen } from "./StartScreen";
 
 const POLL_MS = 4000;
-const ASK_ABOUT_COMMENTS = "Please go through the open comments and update the plan where it makes sense.";
+/** Shown the whole time the agent works. Its step-by-step status events (searching, writing...) aren't shown. */
+const WORKING_STATUS = "Plotting your adventure…";
 // Below this width the sidebar is a drawer (see globals.css) instead of a column.
 const DRAWER_QUERY = "(max-width: 760px)";
 const COLLAPSED_KEY = "planaway:sidebar-collapsed";
@@ -38,7 +40,6 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   const [viewing, setViewing] = useState("current");
   const [live, setLive] = useState<LiveTurn[]>([]);
   const [streamingHere, setStreamingHere] = useState(false);
-  const [status, setStatus] = useState("");
   // sidebarOpen is the phone drawer; sidebarCollapsed hides the desktop column.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -51,6 +52,13 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   const [viewers, setViewers] = useState<UserRef[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const dialogs = useDialogs();
+
+  // Photos for sidebar thumbnails (each trip's first destination) and the start screen's ideas.
+  const photoQueries = useMemo(
+    () => [...new Set([...trips.flatMap((t) => (t.destinations[0] ? [areaQuery(t.destinations[0])] : [])), ...INSPIRATION_QUERIES])],
+    [trips],
+  );
+  const { lookup: photos } = usePlaceQueries(photoQueries);
 
   // The trip on screen right now. Stream events for any other trip are
   // ignored (the server still finishes and saves that turn).
@@ -175,7 +183,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   const working = streamingHere || Boolean(busyElsewhere);
   const statusText = busyElsewhere
     ? `${busyElsewhere.id === user.id ? "You are" : `${busyElsewhere.name} is`} asking PlanAway… changes will appear here.`
-    : status;
+    : WORKING_STATUS;
 
   const updateLastTurn = (patch: (t: LiveTurn) => LiveTurn) =>
     setLive((turns) => (turns.length ? [...turns.slice(0, -1), patch(turns[turns.length - 1])] : turns));
@@ -184,16 +192,12 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     async (tripId: string, text: string) => {
       setLive((turns) => [...turns, { text, reply: "", error: null }]);
       setStreamingHere(true);
-      setStatus("Thinking…");
 
       const onEvent = (ev: AgentEvent) => {
         if (activeId.current !== tripId) return;
         switch (ev.type) {
           case "text":
             updateLastTurn((t) => ({ ...t, reply: t.reply + ev.text }));
-            break;
-          case "status":
-            setStatus(ev.text);
             break;
           case "itinerary":
             setTrip((t) => (t && t.id === tripId ? { ...t, itinerary: ev.itinerary } : t));
@@ -335,6 +339,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
         <Sidebar
           user={user}
           trips={trips}
+          lookup={photos}
           activeId={trip?.id ?? null}
           onSelect={openTrip}
           onNewTrip={() => showTrip(null)}
@@ -381,12 +386,11 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
                 onShowChat={() => hideChat(false)}
                 onShowTrips={sidebarCollapsed ? showSidebar : undefined}
                 onChanged={refreshTrip}
-                onAskAgent={() => sendMessage(trip.id, ASK_ABOUT_COMMENTS)}
                 onError={notify}
               />
             </section>
           ) : (
-            <StartScreen onStart={startTrip} onOpenSidebar={showSidebar} />
+            <StartScreen onStart={startTrip} onOpenSidebar={showSidebar} userName={user.name} lookup={photos} />
           )}
         </main>
 

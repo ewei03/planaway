@@ -15,8 +15,6 @@ function setup(overrides: Partial<ComponentProps<typeof CommentsPanel>> = {}) {
     onAnchor: vi.fn(),
     onClose: vi.fn(),
     onChanged: vi.fn(),
-    onAskAgent: vi.fn(),
-    agentBusy: false,
     onError: vi.fn(),
     ...overrides,
   };
@@ -140,21 +138,5 @@ describe("CommentsPanel", () => {
     const dialog = screen.getByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     expect(fetch).toHaveBeenCalledWith(`/api/trips/${tripView().id}/comments/${root.id}`, expect.objectContaining({ method: "DELETE" }));
-  });
-
-  it("offers to ask the agent about open comments, for editors only", async () => {
-    const { onAskAgent } = setup({ trip: tripView({ comments: [commentView()] }) });
-    await userEvent.click(screen.getByRole("button", { name: /Ask PlanAway to address open comments/ }));
-    expect(onAskAgent).toHaveBeenCalled();
-  });
-
-  it("disables asking the agent while it's busy", () => {
-    setup({ trip: tripView({ comments: [commentView()] }), agentBusy: true });
-    expect(screen.getByRole("button", { name: /Ask PlanAway/ })).toBeDisabled();
-  });
-
-  it("hides the agent button from viewers", () => {
-    setup({ trip: tripView({ role: "viewer", comments: [commentView()] }) });
-    expect(screen.queryByRole("button", { name: /Ask PlanAway/ })).toBeNull();
   });
 });

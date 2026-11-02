@@ -18,7 +18,6 @@ function setup(overrides: Partial<ComponentProps<typeof ItineraryPane>> = {}) {
     onExport: vi.fn(),
     onBack: vi.fn(),
     onChanged: vi.fn(),
-    onAskAgent: vi.fn(),
     onError: vi.fn(),
     ...overrides,
   };
@@ -63,7 +62,7 @@ describe("ItineraryPane", () => {
 
   it("saves the current draft from the toolbar", async () => {
     const { props } = setup();
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save version" }));
     expect(props.onSaveVersion).toHaveBeenCalled();
     // Delete stays in the sidebar's trip menu.
     expect(screen.queryByRole("button", { name: /^Delete/ })).toBeNull();
@@ -71,16 +70,16 @@ describe("ItineraryPane", () => {
 
   it("disables Save while viewing an old version or before there's an itinerary", () => {
     const { view } = setup({ trip: tripView({ versions: [version] }), viewing: "v1" });
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save version" })).toBeDisabled();
     view.unmount();
     setup({ trip: tripView({ itinerary: null }) });
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Export ▾" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save version" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
   });
 
   it("exports from the toolbar menu", async () => {
     const { props } = setup();
-    await userEvent.click(screen.getByRole("button", { name: "Export ▾" }));
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
     expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
       "Spreadsheet (.csv)",
       "Document (.md)",
@@ -94,18 +93,18 @@ describe("ItineraryPane", () => {
 
   it("closes the export menu on an outside click or Escape", async () => {
     setup();
-    await userEvent.click(screen.getByRole("button", { name: "Export ▾" }));
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
     await userEvent.click(document.body);
     expect(screen.queryByRole("menu")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Export ▾" }));
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("lets viewers export but not save", () => {
     setup({ trip: tripView({ role: "viewer", sharedBy: { id: "u-sam", name: "Sam" } }) });
-    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Export ▾" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Save version" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
 
   it("switches versions from the menu", async () => {
@@ -114,9 +113,9 @@ describe("ItineraryPane", () => {
     expect(props.onView).toHaveBeenCalledWith("v1");
   });
 
-  it("shows who else is viewing in the toolbar", () => {
+  it("shows who is viewing, you included, in the toolbar", () => {
     setup({ viewers: [{ id: "u-sam", name: "Sam" }] });
-    expect(screen.getByRole("group", { name: "Also viewing: Sam" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Viewing now: You, Sam" })).toBeInTheDocument();
   });
 
   it("counts open comment threads and opens the panel on an item", async () => {
@@ -127,7 +126,7 @@ describe("ItineraryPane", () => {
     ];
     comments.push(commentView({ parentId: comments[0].id }));
     setup({ trip: tripView({ comments }) });
-    expect(screen.getByRole("button", { name: "💬 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Comments, 2 open" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "1 comments on Day 1 · Nishiki Market" }));
     expect(screen.getByRole("complementary", { name: "Comments" })).toBeInTheDocument();

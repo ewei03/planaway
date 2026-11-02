@@ -17,6 +17,7 @@ import { CommentsPanel } from "./CommentsPanel";
 import { ItineraryView } from "./ItineraryView";
 import { usePlaces } from "./places";
 import { TripMap } from "./TripMap";
+import { BookmarkIcon, ChevronDownIcon, CommentIcon, DownloadIcon, HistoryIcon, LogoIcon, MenuIcon } from "./icons";
 import { Viewers } from "./Viewers";
 
 interface Props {
@@ -38,12 +39,11 @@ interface Props {
   /** Set while the sidebar is collapsed, so it can be reopened with the chat hidden. */
   onShowTrips?: () => void;
   onChanged: () => void;
-  onAskAgent: () => void;
   onError: (message: string) => void;
 }
 
 export function ItineraryPane(props: Props) {
-  const { trip, user, viewing, viewers = [], working, onView, onSaveVersion, onExport, onBack, onChanged, onAskAgent, onError } = props;
+  const { trip, user, viewing, viewers = [], working, onView, onSaveVersion, onExport, onBack, onChanged, onError } = props;
   const { chatHidden = false, onShowChat, onShowTrips } = props;
   const [exportOpen, setExportOpen] = useState(false);
   // undefined: panel closed; null: all comments; otherwise one item's threads.
@@ -86,44 +86,58 @@ export function ItineraryPane(props: Props) {
           ←
         </button>
         {chatHidden && onShowTrips && (
-          <button className="btn icon wide-only" aria-label="Show trips" title="Show trips" onClick={onShowTrips}>
-            ☰
+          <button className="btn wide-only panel-open" aria-label="Show trips" title="Show trips" onClick={onShowTrips}>
+            <MenuIcon size={16} /> Trips
           </button>
         )}
         {chatHidden && onShowChat && (
-          <button className="btn wide-only show-chat" aria-label="Show chat" title="Show chat" onClick={onShowChat}>
-            » Chat
+          <button className="btn wide-only panel-open" aria-label="Show chat" title="Show chat" onClick={onShowChat}>
+            <LogoIcon size={16} /> Chat
           </button>
         )}
-        <select aria-label="Itinerary version" value={viewing} onChange={(e) => onView(e.target.value)}>
-          <option value="current">Current draft</option>
-          {[...trip.versions].reverse().map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.label} · {formatDateTime(v.savedAt)}
-            </option>
-          ))}
-        </select>
+        <label className={`version-picker ${viewing !== "current" ? "saved" : ""}`}>
+          <HistoryIcon size={16} />
+          <select aria-label="Itinerary version" value={viewing} onChange={(e) => onView(e.target.value)}>
+            <option value="current">Current draft</option>
+            {[...trip.versions].reverse().map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label} · {formatDateTime(v.savedAt)}
+              </option>
+            ))}
+          </select>
+          <ChevronDownIcon size={14} />
+        </label>
+        <Viewers me={user} viewers={viewers} />
         <div className="toolbar-actions">
-          <Viewers viewers={viewers} />
           <button
-            className={`btn ${commentAnchor !== undefined ? "pressed" : ""}`}
+            className={`btn comments-btn ${commentAnchor !== undefined ? "pressed" : ""}`}
+            aria-label={openCount > 0 ? `Comments, ${openCount} open` : "Comments"}
             onClick={() => setCommentAnchor(commentAnchor === undefined ? null : undefined)}
           >
-            💬{openCount > 0 ? ` ${openCount}` : ""}
+            <CommentIcon size={16} />
+            <span className="btn-label">Comments</span>
+            {openCount > 0 && (
+              <span className="count-badge" aria-hidden="true">
+                {openCount}
+              </span>
+            )}
           </button>
           {canEdit(trip.role) && (
             <button
-              className="btn"
+              className="btn soft"
+              aria-label="Save version"
               title={viewing === "current" ? "Save a snapshot of the current draft" : "Switch to the current draft to save it"}
               disabled={!trip.itinerary || viewing !== "current"}
               onClick={onSaveVersion}
             >
-              Save
+              <BookmarkIcon size={16} />
+              <span className="btn-label">Save version</span>
             </button>
           )}
           <div className="menu">
             <button
-              className="btn"
+              className="btn primary"
+              aria-label="Export"
               aria-haspopup="menu"
               aria-expanded={exportOpen}
               disabled={!itinerary}
@@ -132,7 +146,9 @@ export function ItineraryPane(props: Props) {
                 setExportOpen((o) => !o);
               }}
             >
-              Export ▾
+              <DownloadIcon size={16} />
+              <span className="btn-label">Export</span>
+              <ChevronDownIcon size={14} />
             </button>
             {exportOpen && (
               <div className="menu-list" role="menu" aria-label="Export as">
@@ -158,6 +174,7 @@ export function ItineraryPane(props: Props) {
           {itinerary ? (
             <ItineraryView
               itinerary={itinerary}
+              tripId={trip.id}
               counts={counts}
               onComment={setCommentAnchor}
               lookup={lookup}
@@ -179,8 +196,6 @@ export function ItineraryPane(props: Props) {
             onAnchor={setCommentAnchor}
             onClose={() => setCommentAnchor(undefined)}
             onChanged={onChanged}
-            onAskAgent={onAskAgent}
-            agentBusy={working}
             onError={onError}
           />
         )}

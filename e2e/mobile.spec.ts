@@ -13,11 +13,11 @@ test("navigate between chat, itinerary, and sidebar on a phone", async ({ page }
   await expect(page.getByPlaceholder(/Refine the plan/)).toBeInViewport();
 
   await page.getByRole("button", { name: "Show trips" }).click();
-  await expect(page.getByRole("button", { name: "+ New trip" })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "New trip", exact: true })).toBeInViewport();
   await page.getByRole("button", { name: "Hide trips" }).click();
-  await expect(page.getByRole("button", { name: "+ New trip" })).not.toBeInViewport();
+  await expect(page.getByRole("button", { name: "New trip", exact: true })).not.toBeInViewport();
   await page.getByRole("button", { name: "Show trips" }).click();
-  await expect(page.getByRole("button", { name: "+ New trip" })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "New trip", exact: true })).toBeInViewport();
 
   // No horizontal scrolling.
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

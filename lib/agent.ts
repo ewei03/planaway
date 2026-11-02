@@ -154,8 +154,12 @@ export async function runTurn(input: TurnInput, emit: (e: AgentEvent) => void): 
         tools,
         messages: [...input.history, ...newMessages],
         output_config: { effort: EFFORT },
+        // Thinking blocks are bound to the request they came from, tool list
+        // included. Any change to the tools (e.g. the itinerary schema) would
+        // otherwise 400 every trip with older turns; drop those blocks instead.
+        thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
         cache_control: { type: "ephemeral" },
-        betas: ["server-side-fallback-2026-07-01"],
+        betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
         fallbacks: "default",
       });
 

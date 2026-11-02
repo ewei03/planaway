@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { canEdit, EXPORT_FORMATS, relativeTime, useMinuteTick, type ExportFormat, type SessionUser, type TripSummary } from "./client";
+import { areaQuery } from "@/lib/route";
+import { CloseIcon, LogoIcon, PlusIcon } from "./icons";
+import { credit, type PlaceLookup } from "./places";
 import { SiteFooter } from "./SiteFooter";
 
 type SortOrder = "newest" | "oldest";
@@ -12,6 +15,8 @@ interface Props {
   /** The user's own trips and the ones shared with them, newest activity first. */
   trips: TripSummary[];
   activeId: string | null;
+  /** Place photos for trip thumbnails; trips without one show their initial. */
+  lookup?: PlaceLookup;
   onSelect: (id: string) => void;
   onNewTrip: () => void;
   onRename: (tripId: string) => void;
@@ -33,7 +38,7 @@ interface OpenMenu {
 }
 
 export function Sidebar(props: Props) {
-  const { user, trips, activeId, onSelect, onNewTrip, onSignOut, onHide } = props;
+  const { user, trips, activeId, lookup, onSelect, onNewTrip, onSignOut, onHide } = props;
   const { onRename, onSaveVersion, onExport, onShare, onDelete, onLeave } = props;
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   useMinuteTick();
@@ -88,8 +93,11 @@ export function Sidebar(props: Props) {
     return (
       <li key={t.id} className={`trip-item ${t.id === activeId ? "active" : ""} ${open ? "menu-open" : ""}`}>
         <button className={`trip-open ${t.id === activeId ? "active" : ""}`} onClick={() => onSelect(t.id)}>
-          <span className="t-title">{t.title}</span>
-          <span className="t-meta">Updated {relativeTime(t.updatedAt)}</span>
+          <TripThumb trip={t} lookup={lookup} />
+          <span className="t-text">
+            <span className="t-title">{t.title}</span>
+            <span className="t-meta">Updated {relativeTime(t.updatedAt)}</span>
+          </span>
         </button>
         <button
           className="icon-btn trip-more"
@@ -202,15 +210,16 @@ export function Sidebar(props: Props) {
     <aside className="sidebar">
       <div className="brand">
         <span className="logo" aria-hidden="true">
-          ✈
+          <LogoIcon />
         </span>
-        <span>PlanAway</span>
-        <button className="icon-btn hide-sidebar" title="Hide trips" aria-label="Hide trips" onClick={onHide}>
-          ✕
+        <span className="brand-name">PlanAway</span>
+        <button className="icon-btn panel-close hide-sidebar" title="Hide trips" aria-label="Hide trips" onClick={onHide}>
+          <CloseIcon size={18} />
         </button>
       </div>
-      <button className="btn primary block" onClick={onNewTrip}>
-        + New trip
+      <button className="btn primary block new-trip" onClick={onNewTrip}>
+        <PlusIcon />
+        New trip
       </button>
 
       <div className="trip-sections">
@@ -250,5 +259,28 @@ export function Sidebar(props: Props) {
       </div>
       <SiteFooter compact />
     </aside>
+  );
+}
+
+/** Warm tints for trips with no photo yet, picked by trip id so each keeps its color. */
+const THUMB_TINTS = ["#E8C3A8", "#BFD9E6", "#C9DCC4", "#E6CBE0", "#F0D9A8", "#C8CDEB"];
+
+/** The trip's first destination photo, or its initial on a tint. */
+function TripThumb({ trip, lookup }: { trip: TripSummary; lookup?: PlaceLookup }) {
+  const [broken, setBroken] = useState(false);
+  const dest = trip.destinations[0];
+  const photo = dest && lookup ? lookup(areaQuery(dest))?.photos[0] : undefined;
+  if (photo && !broken) {
+    return (
+      <span className="t-thumb" title={credit(photo)} aria-hidden="true">
+        <img src={photo.thumb} alt="" loading="lazy" onError={() => setBroken(true)} />
+      </span>
+    );
+  }
+  const tint = THUMB_TINTS[[...trip.id].reduce((n, ch) => n + ch.charCodeAt(0), 0) % THUMB_TINTS.length];
+  return (
+    <span className="t-thumb initial" style={{ background: tint }} aria-hidden="true">
+      {trip.title.trim().slice(0, 1).toUpperCase() || "?"}
+    </span>
   );
 }

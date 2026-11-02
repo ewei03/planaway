@@ -1,7 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HeroPhotos, PlaceThumb, PhotoViewer, credit, usePlaces } from "@/components/places";
+import { CoverPhotos, PlaceThumb, PhotoViewer, credit, usePlaces } from "@/components/places";
 import { normalizeQuery, placeQueries } from "@/lib/route";
 import { fakePlace, sampleItinerary } from "../fixtures";
 import { mockFetch } from "./fixtures";
@@ -48,14 +48,20 @@ describe("PlaceThumb", () => {
   });
 });
 
-describe("HeroPhotos", () => {
+describe("CoverPhotos", () => {
   const photo = (label: string) => ({ place: fakePlace(label), photo: fakePlace(label).photos[0], label });
 
-  it("shows up to three photos with labels and credits linked to the license page", () => {
-    render(<HeroPhotos photos={["Kyoto", "Nara", "Osaka", "Kobe"].map(photo)} />);
-    expect(screen.getAllByRole("img")).toHaveLength(3);
-    expect(screen.getByText("Kyoto")).toBeInTheDocument();
+  it("shows the first photo as the cover and two more as insets, all credited", () => {
+    render(<CoverPhotos photos={["Kyoto", "Nara", "Osaka", "Kobe"].map(photo)} />);
+    expect(screen.getAllByRole("button", { name: /^Photos of/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Photos of Kyoto",
+      "Photos of Nara",
+      "Photos of Osaka",
+    ]);
+    expect(screen.getByRole("img", { name: "Kyoto" })).toBeInTheDocument();
+    expect(screen.getByText("Nara")).toBeInTheDocument();
     expect(screen.queryByText("Kobe")).toBeNull();
+    expect(screen.getAllByRole("link", { name: "Photo: Aiko, CC BY-SA 4.0" })).toHaveLength(3);
     expect(screen.getAllByRole("link", { name: "Photo: Aiko, CC BY-SA 4.0" })[0]).toHaveAttribute(
       "href",
       "https://commons.wikimedia.org/wiki/File:kyoto-a.jpg",
@@ -63,7 +69,7 @@ describe("HeroPhotos", () => {
   });
 
   it("renders nothing without photos", () => {
-    const { container } = render(<HeroPhotos photos={[]} />);
+    const { container } = render(<CoverPhotos photos={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
 });

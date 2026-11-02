@@ -44,12 +44,10 @@ interface Props {
   onClose: () => void;
   /** Refetch the trip after a change. */
   onChanged: () => void;
-  onAskAgent: () => void;
-  agentBusy: boolean;
   onError: (message: string) => void;
 }
 
-export function CommentsPanel({ trip, user, anchor, onAnchor, onClose, onChanged, onAskAgent, agentBusy, onError }: Props) {
+export function CommentsPanel({ trip, user, anchor, onAnchor, onClose, onChanged, onError }: Props) {
   const [showResolved, setShowResolved] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -120,12 +118,6 @@ export function CommentsPanel({ trip, user, anchor, onAnchor, onClose, onChanged
             Resolved ({all.length - openCount})
           </button>
         </div>
-      )}
-
-      {!anchor && !showResolved && openCount > 0 && canEdit(trip.role) && (
-        <button className="btn block ask-agent" disabled={agentBusy} onClick={onAskAgent}>
-          ✨ Ask PlanAway to address open comments
-        </button>
       )}
 
       <div className="cp-threads">

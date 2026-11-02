@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { canEdit, relativeTime, useMinuteTick, type SessionUser, type TripView } from "./client";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { canEdit, type SessionUser, type TripView } from "./client";
+import { ArrowRightIcon, CloseIcon, LogoIcon, MapIcon, MenuIcon } from "./icons";
 import { Markdown } from "./Markdown";
+
+/** One-tap follow-ups under the chat once there's a plan to refine. */
+const QUICK_REPLIES = ["Make it cheaper", "Add a rest day", "More food spots"];
 
 /** A turn this tab sent that isn't in the saved chat log yet: in flight, or failed. */
 export interface LiveTurn {
@@ -30,7 +34,6 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const editable = canEdit(trip.role);
-  useMinuteTick();
 
   // Keep the newest message in view as the reply streams in.
   const lastReply = live.at(-1)?.reply;
@@ -64,7 +67,7 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
     <div className="chat">
       <div className="chat-header">
         <button className="btn icon mobile-only open-sidebar" aria-label="Show trips" onClick={onOpenSidebar}>
-          ☰
+          <MenuIcon size={16} />
         </button>
         <div className="chat-title">
           {editingTitle === null ? (
@@ -89,16 +92,12 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
               }}
             />
           )}
-          <span className="trip-meta muted">
-            Updated {relativeTime(trip.updatedAt)}
-            {trip.sharedBy && ` · Shared by ${trip.sharedBy.name} · ${trip.role}`}
-          </span>
         </div>
         <button className="btn icon mobile-only" id="show-itinerary" aria-label="Show itinerary" onClick={onShowItinerary}>
-          🗺
+          <MapIcon size={16} />
         </button>
-        <button className="icon-btn wide-only hide-chat" title="Hide chat" aria-label="Hide chat" onClick={onHide}>
-          «
+        <button className="icon-btn panel-close wide-only hide-chat" title="Hide chat" aria-label="Hide chat" onClick={onHide}>
+          <CloseIcon size={18} />
         </button>
       </div>
 
@@ -112,9 +111,9 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
           m.role === "user" ? (
             <UserMessage key={m.id} text={m.text} author={m.author?.name ?? "Former member"} mine={m.author?.id === user.id} />
           ) : (
-            <div key={m.id} className="msg assistant">
+            <AgentMessage key={m.id}>
               <Markdown text={m.text || "(no reply)"} />
-            </div>
+            </AgentMessage>
           ),
         )}
         {live.map((turn, i) => (
@@ -124,9 +123,9 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
               <div className="msg error">{turn.error}</div>
             ) : (
               turn.reply && (
-                <div className="msg assistant">
+                <AgentMessage>
                   <Markdown text={turn.reply} />
-                </div>
+                </AgentMessage>
               )
             )}
           </div>
@@ -135,8 +134,27 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
 
       {working && (
         <div className="status">
-          <span className="spinner" aria-hidden="true" />
-          <span className="status-text">{status}</span>
+          <span className="agent-avatar" aria-hidden="true">
+            <LogoIcon size={14} />
+          </span>
+          <span className="status-pill">
+            <span className="typing" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            <span className="status-text">{status}</span>
+          </span>
+        </div>
+      )}
+
+      {editable && !working && trip.itinerary && (
+        <div className="quick-replies" aria-label="Quick replies">
+          {QUICK_REPLIES.map((text) => (
+            <button key={text} type="button" className="chip-btn" onClick={() => onSend(text)}>
+              {text}
+            </button>
+          ))}
         </div>
       )}
 
@@ -150,12 +168,12 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
             onKeyDown={onKeyDown}
             placeholder="Refine the plan: “cheaper hotels”, “add a day trip to Nara”, “swap day 3 and 4”…"
           />
-          <button className="btn primary" type="submit" disabled={working}>
-            Send
+          <button className="btn primary send" type="submit" aria-label="Send" disabled={working}>
+            <ArrowRightIcon />
           </button>
         </form>
       ) : (
-        <div className="composer view-only muted">You have view access. You can still comment on the itinerary with 💬.</div>
+        <div className="composer view-only muted">You have view access. You can still comment on the itinerary.</div>
       )}
     </div>
   );
@@ -166,6 +184,17 @@ function UserMessage({ text, author, mine }: { text: string; author: string; min
     <div className={`msg-wrap ${mine ? "mine" : "theirs"}`}>
       {!mine && <div className="msg-author">{author}</div>}
       <div className={`msg user ${mine ? "" : "other"}`}>{text}</div>
+    </div>
+  );
+}
+
+function AgentMessage({ children }: { children: ReactNode }) {
+  return (
+    <div className="agent-msg">
+      <span className="agent-avatar" aria-hidden="true">
+        <LogoIcon size={14} />
+      </span>
+      <div className="msg assistant">{children}</div>
     </div>
   );
 }

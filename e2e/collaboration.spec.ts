@@ -23,7 +23,7 @@ async function shareOneTrip(page: Page) {
   await dialog.getByRole("button", { name: "Close" }).click();
 
   // A second trip that is not shared.
-  await page.getByRole("button", { name: "+ New trip" }).click();
+  await page.getByRole("button", { name: "New trip", exact: true }).click();
   await planTrip(page);
   return link;
 }
@@ -53,7 +53,6 @@ test("share one trip with a viewer, who comments; the agent addresses the commen
 
   // Viewers see the trip read-only, but can comment.
   await expect(viewer.getByText(/You have view access/)).toBeVisible();
-  await expect(viewer.getByText(/Shared by Owner · viewer/)).toBeVisible();
   await viewer.getByRole("button", { name: "Options for Spring in Kyoto" }).click();
   for (const item of ["Share…", "Save version…", "Delete trip…"]) {
     await expect(viewer.getByRole("menuitem", { name: item })).toHaveCount(0);
@@ -69,15 +68,15 @@ test("share one trip with a viewer, who comments; the agent addresses the commen
   // The owner's tab picks it up by polling.
   await page.getByRole("button", { name: /^Spring in Kyoto/ }).click();
   // Each sees the other in the toolbar while both have the trip open.
-  await expect(page.getByRole("group", { name: "Also viewing: Viewer" })).toBeVisible();
-  await expect(viewer.getByRole("group", { name: "Also viewing: Owner" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Viewing now: You, Viewer" })).toBeVisible();
+  await expect(viewer.getByRole("group", { name: "Viewing now: You, Owner" })).toBeVisible();
   await expect(page.getByRole("button", { name: "1 comments on Day 1 · Pontocho dinner" })).toBeVisible();
-  await page.getByRole("button", { name: "💬 1" }).click();
+  await page.getByRole("button", { name: "Comments, 1 open" }).click();
   const panel = page.getByRole("complementary", { name: "Comments" });
   await expect(panel.getByText("Can we eat earlier?")).toBeVisible();
-  await panel.getByRole("button", { name: /Ask PlanAway to address open comments/ }).click();
-
-  // The agent replies in the thread and resolves it.
+  // Any message to the agent includes new comments; it replies in the thread and resolves it.
+  await page.getByPlaceholder(/Refine the plan/).fill("Please look at the comments");
+  await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByText("Updated the plan from your comments.")).toBeVisible();
   await panel.getByRole("button", { name: /Resolved \(1\)/ }).click();
   await expect(panel.getByText("Moved it earlier in the day.")).toBeVisible();

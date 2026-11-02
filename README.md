@@ -69,7 +69,8 @@ Create an account. Your trips are listed in the sidebar under **Your trips**, ea
 **Starting a trip:**
 - **I have an idea**: describe the trip in your own words.
 - **Plan it for me**: fill in origin, budget, dates, interests, and pace. PlanAway picks the destination if you leave it blank.
-- **🎲 Surprise me**: a random destination that fits whatever origin, budget, and dates you entered.
+- **Need inspiration?** Pick one of the idea cards under the box to start from it.
+- **Surprise me**: a random destination that fits whatever origin, budget, and dates you entered.
 
 **Planning together:**
 - **Sharing a trip.** Choose **Share…** in a trip's ⋯ menu to create an invite link that lets someone edit or view it. A link gives access to that one trip, never the rest of your trips. Links expire after 1, 7 (the default), or 30 days, or never, and you can revoke them. The same dialog lists who joined, where you can change their role or remove them. Only a trip's owner (whoever created it) can share or delete it.
@@ -81,8 +82,8 @@ Create an account. Your trips are listed in the sidebar under **Your trips**, ea
   | Viewer | View the itinerary, comment, export |
 
 - **Shared chat.** Everyone the trip is shared with sees the conversation with the agent, and messages show who sent them. One person's request runs at a time. Others see "Maya is asking PlanAway…" and get the result when it finishes.
-- **Comments.** Click 💬 next to any activity, day, flight, stay, or budget line (or the trip title) to start a thread, e.g. "too pricey" or "vegetarian options?". Threads can be replied to, resolved, and reopened. On the next turn the agent sees new comments, changes the plan, replies in the threads, and resolves the ones it addressed. **✨ Ask PlanAway to address open comments** in the comments panel triggers that directly.
-- Open tabs check for collaborators' changes every 4 seconds. The same check shows who else has the trip open, as initials next to 💬 above the itinerary.
+- **Comments.** Click the comment icon next to any activity, flight, stay, or budget line to start a thread, e.g. "too pricey" or "vegetarian options?". Threads can be replied to, resolved, and reopened. On the next turn the agent sees new comments, changes the plan, replies in the threads, and resolves the ones it addressed.
+- Open tabs check for collaborators' changes every 4 seconds. The same check shows who has the trip open (you first) as initials next to the version picker above the itinerary.
 
 **Saving and exporting:**
 - **Save** stores a named snapshot of the current draft. Pick it from the version menu to view or export it later.

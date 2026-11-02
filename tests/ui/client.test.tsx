@@ -97,6 +97,11 @@ describe("api", () => {
     expect(await api("/api/x", { method: "DELETE" })).toBeNull();
   });
 
+  it("returns null for a 201 with no body, like a new comment", async () => {
+    mockFetch(() => new Response(null, { status: 201 }));
+    expect(await api("/api/trips/x/comments", { method: "POST", body: "{}" })).toBeNull();
+  });
+
   it("throws the server's error message", async () => {
     mockFetch(() => Response.json({ error: "Trip not found" }, { status: 404 }));
     await expect(api("/api/x")).rejects.toThrow("Trip not found");

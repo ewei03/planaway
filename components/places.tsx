@@ -31,10 +31,15 @@ const BATCH = 80;
  * small edits don't refetch.
  */
 export function usePlaces(itinerary: Itinerary | null): { lookup: PlaceLookup; loading: boolean } {
+  const queries = useMemo(() => (itinerary ? placeQueries(itinerary) : []), [itinerary]);
+  return usePlaceQueries(queries);
+}
+
+/** usePlaces for any list of queries, e.g. trip thumbnails and inspiration photos. */
+export function usePlaceQueries(queries: string[]): { lookup: PlaceLookup; loading: boolean } {
   const [found, setFound] = useState<Map<string, Place | null>>(() => new Map());
   const failed = useRef(new Set<string>());
 
-  const queries = useMemo(() => (itinerary ? placeQueries(itinerary) : []), [itinerary]);
   const missing = queries.filter((q) => !found.has(normalizeQuery(q)) && !failed.current.has(normalizeQuery(q)));
   const missingKey = missing.slice(0, BATCH).join("\n");
 
@@ -91,29 +96,38 @@ export function PlaceThumb({ place, label, size = 56 }: { place: Place | null | 
   );
 }
 
-/** Wide photos for the trip header, with credits. */
-export function HeroPhotos({ photos }: { photos: { place: Place; photo: PlacePhoto; label: string }[] }) {
+/**
+ * The trip's cover: the first destination's photo, wide, with the other
+ * destinations as small insets. Every shown photo is credited, as Commons
+ * licenses require.
+ */
+export function CoverPhotos({ photos }: { photos: { place: Place; photo: PlacePhoto; label: string }[] }) {
   const [viewing, setViewing] = useState<{ place: Place; label: string } | null>(null);
   const [broken, setBroken] = useState<Set<string>>(() => new Set());
   const shown = photos.filter((p) => !broken.has(p.photo.src)).slice(0, 3);
   if (shown.length === 0) return null;
+  const [main, ...insets] = shown;
+  const onError = (src: string) => setBroken((b) => new Set(b).add(src));
   return (
-    <div className={`hero hero-${shown.length}`}>
-      {shown.map(({ place, photo, label }) => (
-        <figure key={photo.src}>
-          <button className="hero-img" aria-label={`Photos of ${label}`} onClick={() => setViewing({ place, label })}>
-            <img
-              src={photo.src}
-              alt={label}
-              onError={() => setBroken((b) => new Set(b).add(photo.src))}
-            />
-          </button>
-          <figcaption>
-            <span className="hero-label">{label}</span>
-            <Credit photo={photo} />
-          </figcaption>
-        </figure>
-      ))}
+    <div className="cover">
+      <button className="cover-img" aria-label={`Photos of ${main.label}`} onClick={() => setViewing(main)}>
+        <img src={main.photo.src} alt={main.label} onError={() => onError(main.photo.src)} />
+      </button>
+      {insets.length > 0 && (
+        <div className="cover-insets">
+          {insets.map((p) => (
+            <button key={p.photo.src} className="cover-inset" aria-label={`Photos of ${p.label}`} onClick={() => setViewing(p)}>
+              <img src={p.photo.thumb} alt="" onError={() => onError(p.photo.src)} />
+              <span>{p.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="cover-credits">
+        {shown.map((p) => (
+          <Credit key={p.photo.src} photo={p.photo} />
+        ))}
+      </div>
       {viewing && <PhotoViewer place={viewing.place} label={viewing.label} onClose={() => setViewing(null)} />}
     </div>
   );

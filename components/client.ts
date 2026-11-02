@@ -54,7 +54,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
   });
   if (!res.ok) throw new Error(await errorText(res));
-  return (res.status === 204 ? null : await res.json()) as T;
+  // Some routes answer with no body (204, or 201 after creating something).
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
 }
 
 async function errorText(res: Response): Promise<string> {
