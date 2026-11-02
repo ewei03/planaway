@@ -68,6 +68,12 @@ describe("Markdown export", () => {
     expect(md).toContain("**Estimated total:** $4,200");
   });
 
+  it("says what weather to expect and how to prepare", () => {
+    expect(render("md")).toContain(
+      "**Weather:** Mild days and cool evenings; spring showers are common. Pack layers, a light rain jacket, and comfortable waterproof shoes.",
+    );
+  });
+
   it("escapes pipes inside budget table cells", () => {
     expect(render("md")).toContain("Ryokan \\| 3 nights");
   });

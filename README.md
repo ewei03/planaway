@@ -85,6 +85,8 @@ Create an account. Your trips are listed in the sidebar under **Your trips**, ea
 - **Comments.** Click the comment icon next to any activity, flight, stay, or budget line to start a thread, e.g. "too pricey" or "vegetarian options?". Threads can be replied to, resolved, and reopened. On the next turn the agent sees new comments, changes the plan, replies in the threads, and resolves the ones it addressed.
 - Open tabs check for collaborators' changes every 4 seconds. The same check shows who has the trip open (you first) as initials next to the version picker above the itinerary.
 
+**Weather:** the trip card says what weather to expect over the trip and how to dress and prepare for it, in general terms from PlanAway's research (no exact temperatures).
+
 **Saving and exporting:**
 - **Save** stores a named snapshot of the current draft. Pick it from the version menu to view or export it later.
 - **Export** downloads the itinerary as `.csv` (spreadsheet), `.md` (document), `.ics` (calendar, once the trip has dates), or `.json`.

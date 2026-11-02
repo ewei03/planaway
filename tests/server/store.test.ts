@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getDb, schema as s } from "@/lib/db";
 import {
   ConflictError,
@@ -35,11 +35,13 @@ import {
   type UserRef,
 } from "@/lib/store";
 import { sampleItinerary } from "../fixtures";
-import { makeTrip, makeUser, setTrip, shareTrip } from "./helpers";
+import { makeTrip, makeUser, releaseAllTurns, setTrip, shareTrip } from "./helpers";
 
 // One cast of characters for the whole file; each test makes its own trips
 // so tests don't depend on each other.
 let owner: UserRef, editor: UserRef, viewer: UserRef, outsider: UserRef;
+
+afterEach(releaseAllTurns);
 
 beforeAll(async () => {
   [owner, editor, viewer, outsider] = await Promise.all([makeUser("Owner"), makeUser("Editor"), makeUser("Viewer"), makeUser("Outsider")]);
@@ -366,6 +368,37 @@ describe("agent turns", () => {
     commentReplies: [],
     commentsSeenAt: new Date(),
     ...overrides,
+  });
+
+  it("lets each person run one turn at a time, across all their trips", async () => {
+    const u = await makeUser("OneAtATime");
+    const [a, b] = [await makeTrip(u.id), await makeTrip(u.id)];
+    await setTrip(a, { title: "Lisbon" });
+    expect(await claimTurn(u.id, a)).toBe(true);
+
+    await expect(claimTurn(u.id, b)).rejects.toThrow("PlanAway is still working on “Lisbon”");
+    // A new trip would sit empty, so it's refused up front too.
+    await expect(createTrip(u.id)).rejects.toBeInstanceOf(ConflictError);
+    // Other people aren't held up by it.
+    expect(await createTrip(outsider.id)).toHaveProperty("id");
+
+    await releaseTurn(a);
+    expect(await claimTurn(u.id, b)).toBe(true);
+  });
+
+  it("lets only one of two simultaneous requests through", async () => {
+    const u = await makeUser("Racer");
+    const [a, b] = [await makeTrip(u.id), await makeTrip(u.id)];
+    const results = await Promise.allSettled([claimTurn(u.id, a), claimTurn(u.id, b)]);
+    expect(results.filter((r) => r.status === "fulfilled" && r.value === true)).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+  });
+
+  it("doesn't count a crashed turn's stale lock against the person", async () => {
+    const u = await makeUser("Crashed");
+    const [a, b] = [await makeTrip(u.id), await makeTrip(u.id)];
+    await setTrip(a, { turnStartedAt: new Date(Date.now() - 16 * 60 * 1000), turnUserId: u.id });
+    expect(await claimTurn(u.id, b)).toBe(true);
   });
 
   it("allows one turn at a time and shows who is busy", async () => {

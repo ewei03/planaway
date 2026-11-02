@@ -40,6 +40,9 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   const [viewing, setViewing] = useState("current");
   const [live, setLive] = useState<LiveTurn[]>([]);
   const [streamingHere, setStreamingHere] = useState(false);
+  // The trip this tab's agent turn is running on, even after switching away.
+  // Each person runs one turn at a time (the server enforces it too).
+  const [planningId, setPlanningId] = useState<string | null>(null);
   // sidebarOpen is the phone drawer; sidebarCollapsed hides the desktop column.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -192,6 +195,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     async (tripId: string, text: string) => {
       setLive((turns) => [...turns, { text, reply: "", error: null }]);
       setStreamingHere(true);
+      setPlanningId(tripId);
 
       const onEvent = (ev: AgentEvent) => {
         if (activeId.current !== tripId) return;
@@ -222,6 +226,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
         setLive((turns) => turns.filter((t) => t.error));
         setStreamingHere(false);
       }
+      setPlanningId(null);
       loadTrips();
     },
     [loadTrips, refreshTrip],
@@ -390,7 +395,15 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
               />
             </section>
           ) : (
-            <StartScreen onStart={startTrip} onOpenSidebar={showSidebar} userName={user.name} lookup={photos} />
+            <StartScreen
+              onStart={startTrip}
+              onOpenSidebar={showSidebar}
+              userName={user.name}
+              lookup={photos}
+              pastDestinations={[...new Set(trips.flatMap((t) => t.destinations))]}
+              busyWith={planningId ? (findTrip(planningId)?.title ?? "your trip") : null}
+              onOpenBusy={() => planningId && openTrip(planningId)}
+            />
           )}
         </main>
 

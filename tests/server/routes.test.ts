@@ -1,8 +1,8 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent, TurnResult } from "@/lib/agent";
 import type { UserRef } from "@/lib/store";
 import { sampleItinerary } from "../fixtures";
-import { makeTrip, makeUser, setTrip, shareTrip } from "./helpers";
+import { makeTrip, makeUser, releaseAllTurns, setTrip, shareTrip } from "./helpers";
 
 // Route handlers are called directly. Auth.js is replaced by a session for
 // whichever user `signIn` last chose; the agent's model calls are scripted.
@@ -49,6 +49,8 @@ async function ownersTrip(itinerary: Parameters<typeof makeTrip>[1] = null) {
   await shareTrip(owner, id, viewer, "viewer");
   return id;
 }
+
+afterEach(releaseAllTurns);
 
 beforeEach(() => {
   signIn(owner);

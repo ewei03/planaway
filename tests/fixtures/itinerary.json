@@ -6,6 +6,7 @@
   "start_date": "2027-04-02",
   "end_date": "2027-04-04",
   "travelers": 2,
+  "weather": { "kind": "partly_cloudy", "summary": "Mild days and cool evenings; spring showers are common.", "prepare": "Pack layers, a light rain jacket, and comfortable waterproof shoes." },
   "currency": "USD",
   "budget": {
     "estimated_total": 4200,
@@ -76,7 +77,7 @@
       "activities": [
         {
           "id": "a3",
-          "time": "Morning",
+          "time": "10:00",
           "name": "Todai-ji",
           "description": "The giant Buddha hall.",
           "category": "sightseeing",

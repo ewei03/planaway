@@ -124,9 +124,59 @@ function buildPrompt(f: BuildForm): string {
   return lines.join("\n");
 }
 
-function surprisePrompt(f: BuildForm): string {
+/**
+ * Where Surprise me looks. A model asked to "pick at random" lands on the same
+ * few favorites every time, so the app picks the region or theme itself and
+ * leaves the model to choose a specific place within it.
+ */
+export const SURPRISE_THEMES = [
+  "a lesser-known city in Eastern Europe",
+  "a mountain town in the Alps or the Dolomites",
+  "a small Greek island off the usual ferry routes",
+  "the Atlantic coast of Spain or Portugal",
+  "a region of Italy beyond Rome, Florence, and Venice",
+  "the Baltic states",
+  "the Balkans",
+  "Scotland or Ireland beyond the capitals",
+  "Scandinavia or Finland",
+  "a volcanic island in the Atlantic (the Azores, the Canaries, Madeira, or Iceland)",
+  "the Caucasus (Georgia or Armenia)",
+  "Central Asia along the Silk Road",
+  "Japan beyond Tokyo and Kyoto",
+  "South Korea or Taiwan",
+  "Vietnam, Laos, or Cambodia",
+  "an island in Indonesia or the Philippines",
+  "Sri Lanka or southern India",
+  "the Himalayas (Nepal, Bhutan, or northern India)",
+  "Malaysia or Singapore",
+  "Morocco or Tunisia",
+  "a safari region in East or Southern Africa",
+  "a coastal town in West Africa",
+  "the islands of the Indian Ocean",
+  "Jordan or Egypt",
+  "Patagonia",
+  "the Andes (Peru, Bolivia, or Ecuador)",
+  "Colombia",
+  "Mexico beyond the beach resorts",
+  "Central America",
+  "the Caribbean, away from the cruise ports",
+  "a road trip through a US national park region",
+  "a small US city with a big food scene",
+  "Canada's East Coast or the Rockies",
+  "New Zealand",
+  "Australia beyond Sydney and Melbourne",
+  "a Pacific island (Fiji, Samoa, or French Polynesia)",
+] as const;
+
+/** One theme, chosen fresh on each click. */
+export function pickSurpriseTheme(random = Math.random): string {
+  return SURPRISE_THEMES[Math.floor(random() * SURPRISE_THEMES.length)];
+}
+
+function surprisePrompt(f: BuildForm, theme: string, avoid: string[]): string {
   return [
-    "Surprise me! Pick a destination at random: somewhere interesting I probably wouldn't think of myself, anywhere in the world. Then build the whole trip.",
+    `Surprise me! Pick a destination for me in ${theme}: somewhere interesting I probably wouldn't think of myself, that fits the details below. Then build the whole trip.`,
+    ...(avoid.length ? [`I've already planned trips to ${avoid.join(", ")}, so pick somewhere else.`] : []),
     ...constraintLines(f),
   ].join("\n");
 }
@@ -138,9 +188,14 @@ interface Props {
   userName?: string;
   /** Place photos for the inspiration cards. */
   lookup?: PlaceLookup;
+  /** Destinations of the user's trips, which Surprise me steers away from. */
+  pastDestinations?: string[];
+  /** Title of the trip PlanAway is still planning; starting another waits for it. */
+  busyWith?: string | null;
+  onOpenBusy?: () => void;
 }
 
-export function StartScreen({ onStart, onOpenSidebar, userName, lookup }: Props) {
+export function StartScreen({ onStart, onOpenSidebar, userName, lookup, pastDestinations = [], busyWith = null, onOpenBusy }: Props) {
   const [tab, setTab] = useState<"idea" | "build">("idea");
   const [idea, setIdea] = useState("");
   const [form, setForm] = useState<BuildForm>(EMPTY_FORM);
@@ -196,6 +251,17 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup }: Props)
           flights, stays, and things to do on the web, then builds an itinerary you can refine together.
         </p>
 
+        {busyWith && (
+          <p className="busy-note" role="status">
+            PlanAway is still working on “{busyWith}”. You can start another trip when it finishes.{" "}
+            {onOpenBusy && (
+              <button type="button" className="link-btn" onClick={onOpenBusy}>
+                View progress
+              </button>
+            )}
+          </p>
+        )}
+
         <div className="tabs" role="tablist">
           {(
             [
@@ -228,7 +294,7 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup }: Props)
               placeholder="e.g. 10 days in Japan next April for two, Tokyo and Kyoto, love food and design, about $6,000 total from San Francisco"
             />
             <div className="form-actions">
-              <button className="btn primary big" type="submit" disabled={starting}>
+              <button className="btn primary big" type="submit" disabled={starting || Boolean(busyWith)}>
                 Plan this trip <ArrowRightIcon size={16} />
               </button>
             </div>
@@ -302,10 +368,10 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup }: Props)
             />
 
             <div className="form-actions">
-              <button className="btn surprise big" type="button" disabled={starting} onClick={() => start(surprisePrompt(form))}>
+              <button className="btn surprise big" type="button" disabled={starting || Boolean(busyWith)} onClick={() => start(surprisePrompt(form, pickSurpriseTheme(), pastDestinations))}>
                 <DiceIcon /> Surprise me!
               </button>
-              <button className="btn primary big" type="submit" disabled={starting}>
+              <button className="btn primary big" type="submit" disabled={starting || Boolean(busyWith)}>
                 Build my trip <ArrowRightIcon size={16} />
               </button>
             </div>

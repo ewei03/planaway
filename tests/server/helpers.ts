@@ -37,3 +37,12 @@ export async function getTripRow(tripId: string) {
   const [trip] = await db.select().from(s.trips).where(eq(s.trips.id, tripId));
   return trip;
 }
+
+/**
+ * Ends every running agent turn. Tests share users, and each person may run
+ * only one turn at a time, so a turn one test leaves open would block the next.
+ */
+export async function releaseAllTurns() {
+  const db = await getDb();
+  await db.update(s.trips).set({ turnStartedAt: null, turnUserId: null });
+}

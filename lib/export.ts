@@ -76,6 +76,7 @@ function toMarkdown(it: Itinerary): string {
     it.budget.estimated_total !== null && `**Estimated total:** ${money(it.budget.estimated_total, it.currency)}`,
   ].filter(Boolean);
   out.push(...facts.map((f) => `- ${f}`), "");
+  if (it.weather) out.push(`**Weather:** ${it.weather.summary} ${it.weather.prepare}`, "");
 
   if (it.flights.length > 0) {
     out.push("## Flights", "");

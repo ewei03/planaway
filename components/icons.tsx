@@ -166,3 +166,47 @@ const CATEGORY_PATHS: Record<Category, ReactNode> = {
 export const CategoryIcon = ({ category, size }: { category: Category; size?: number }) => (
   <Icon size={size}>{CATEGORY_PATHS[category] ?? CATEGORY_PATHS.other}</Icon>
 );
+
+type WeatherKind = NonNullable<Itinerary["weather"]>["kind"];
+
+const CLOUD = "M7 17h10a4 4 0 0 0 .4-7.98A6 6 0 0 0 6 10.2 3.5 3.5 0 0 0 7 17z";
+
+const WEATHER_PATHS: Record<WeatherKind, ReactNode> = {
+  sunny: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </>
+  ),
+  partly_cloudy: (
+    <>
+      <path d="M8 6.5A4 4 0 0 1 14.6 6M8 2v1.5M3.8 4.2l1 1M2 9h1.5" />
+      <path d="M9 20h9a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 8.7 13 3.5 3.5 0 0 0 9 20z" />
+    </>
+  ),
+  cloudy: <path d={CLOUD} />,
+  rain: (
+    <>
+      <path d="M7 14h10a4 4 0 0 0 .4-7.98A6 6 0 0 0 6 7.2 3.5 3.5 0 0 0 7 14z" />
+      <path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3" />
+    </>
+  ),
+  storm: (
+    <>
+      <path d="M7 14h10a4 4 0 0 0 .4-7.98A6 6 0 0 0 6 7.2 3.5 3.5 0 0 0 7 14z" />
+      <path d="M12.5 14l-2 4h3l-2 4" />
+    </>
+  ),
+  snow: (
+    <>
+      <path d="M7 14h10a4 4 0 0 0 .4-7.98A6 6 0 0 0 6 7.2 3.5 3.5 0 0 0 7 14z" />
+      <path d="M8 18h.01M12 18h.01M16 18h.01M10 21h.01M14 21h.01" strokeWidth={2.6} />
+    </>
+  ),
+  fog: <path d="M4 9h16M3 13h18M5 17h14M8 21h8" />,
+  windy: <path d="M3 9h11a3 3 0 1 0-3-3M3 15h15a3 3 0 1 1-3 3M3 12h8" />,
+};
+
+export const WeatherIcon = ({ kind, size }: { kind: WeatherKind; size?: number }) => (
+  <Icon size={size}>{WEATHER_PATHS[kind] ?? WEATHER_PATHS.cloudy}</Icon>
+);

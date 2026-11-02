@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { activityQuery, heroPhotos, lodgingQuery } from "@/lib/route";
 import { anchorKey, money, safeUrl, type CommentAnchor, type CommentTarget, type Itinerary } from "./client";
-import { CalendarIcon, CategoryIcon, CommentIcon, PlaneIcon, UsersIcon, WalletIcon } from "./icons";
+import { CalendarIcon, CategoryIcon, CommentIcon, PlaneIcon, UsersIcon, WalletIcon, WeatherIcon } from "./icons";
 import { CoverPhotos, PlaceThumb, type PlaceLookup } from "./places";
 import { TipText } from "./TipText";
 import { dayColor } from "./TripMap";
@@ -303,6 +303,17 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
           {it.origin && <Stat icon={<PlaneIcon size={20} />} label="From" value={it.origin} />}
           {it.budget.estimated_total !== null && <Stat icon={<WalletIcon size={20} />} label="Est. total" value={money(it.budget.estimated_total, c)} />}
         </div>
+        {/* Itineraries saved before weather existed have no weather field at all. */}
+        {it.weather && (
+          <div className="weather-note">
+            <span className="weather-note-icon">
+              <WeatherIcon kind={it.weather.kind} size={22} />
+            </span>
+            <p>
+              <strong>What to expect:</strong> {it.weather.summary} <span className="weather-prepare">{it.weather.prepare}</span>
+            </p>
+          </div>
+        )}
         <BudgetBar lines={it.budget.breakdown} currency={c} />
       </div>
 

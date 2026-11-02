@@ -191,6 +191,7 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .eyebrow { margin: 0 0 6px; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .start h1 { font-family: var(--font-heading); font-size: clamp(40px, 6vw, 60px); line-height: 1.02; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 12px; }
 .start-lede { font-size: 17px; max-width: 640px; margin: 0; }
+.busy-note { margin: 20px 0 0; padding: 12px 16px; border-radius: 12px; background: var(--accent-soft); font-size: 14px; }
 .tabs { display: flex; gap: 4px; margin: 28px 0 12px; background: var(--surface-2); padding: 4px; border-radius: 12px; width: fit-content; }
 .tab { border: 0; background: none; padding: 8px 16px; border-radius: 9px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
 .tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
@@ -379,6 +380,11 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .stat-label { font-size: 12px; color: var(--muted); }
 .stat-value { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stat-sub { font-size: 12px; color: var(--muted); }
+/* What weather to expect and how to dress for it, on the trip card. */
+.weather-note { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--bg); }
+.weather-note-icon { display: inline-flex; color: var(--accent); flex: none; margin-top: 1px; }
+.weather-note p { margin: 0; font-size: 14px; line-height: 1.55; }
+.weather-prepare { color: var(--muted); }
 .budget-bar { display: flex; flex-direction: column; gap: 8px; }
 .budget-track { display: flex; gap: 2px; height: 12px; border-radius: 999px; overflow: hidden; }
 .budget-track span { min-width: 4px; }
@@ -409,6 +415,7 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .day-heading { flex: 1; min-width: 200px; margin: 0; font-family: var(--font-heading); font-size: 26px; font-weight: 600; line-height: 1.15; }
 .day-heading .day-dot { width: 10px; height: 10px; vertical-align: 5px; }
 .day-num { white-space: nowrap; }
+
 .day-meta { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .timeline { list-style: none; margin: 0; padding: 0; }
 .act { display: grid; grid-template-columns: 52px 36px minmax(0, 1fr); column-gap: 12px; position: relative; }
@@ -418,6 +425,8 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .act:last-child::before { bottom: calc(100% - 26px); }
 .act:only-child::before { display: none; }
 .act-time { padding-top: 17px; font-size: 13px; font-weight: 700; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+/* Older trips may say "Afternoon" instead of a time: let it wrap rather than spill into the icon. */
+.act-time { overflow-wrap: anywhere; hyphens: auto; line-height: 1.25; }
 .act-icon {
   position: relative; z-index: 1; align-self: start; margin-top: 8px; width: 36px; height: 36px; border-radius: 50%;
   display: inline-grid; place-items: center; box-shadow: 0 0 0 4px var(--bg);

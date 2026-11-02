@@ -185,8 +185,26 @@ function lockIsLive(startedAt: Date | null): boolean {
   return startedAt !== null && Date.now() - startedAt.getTime() < TURN_LOCK_MS;
 }
 
+/**
+ * The trip this user's agent turn is running on, if any. Each person runs one
+ * turn at a time, across all their trips, so requests don't pile up.
+ */
+async function runningTurn(db: Pick<Db, "select">, userId: string): Promise<{ id: string; title: string } | null> {
+  const [row] = await db
+    .select({ id: s.trips.id, title: s.trips.title })
+    .from(s.trips)
+    .where(and(eq(s.trips.turnUserId, userId), gt(s.trips.turnStartedAt, new Date(Date.now() - TURN_LOCK_MS))));
+  return row ?? null;
+}
+
+const stillPlanning = (title: string) =>
+  `PlanAway is still working on “${title}”. You can start another request when it finishes.`;
+
+/** Refuses while the user's agent is busy on another trip, so a new trip isn't left empty. */
 export async function createTrip(userId: string): Promise<{ id: string }> {
   const db = await getDb();
+  const busy = await runningTurn(db, userId);
+  if (busy) throw new ConflictError(stillPlanning(busy.title));
   const [trip] = await db.insert(s.trips).values({ createdBy: userId }).returning({ id: s.trips.id });
   return trip;
 }
@@ -447,12 +465,19 @@ export async function claimTurn(userId: string, tripId: string): Promise<boolean
   const { db, role } = await tripAccess(userId, tripId);
   requireRole(role, "editor", "plan with the agent");
   const staleBefore = new Date(Date.now() - TURN_LOCK_MS);
-  const claimed = await db
-    .update(s.trips)
-    .set({ turnStartedAt: new Date(), turnUserId: userId, revision: sql`${s.trips.revision} + 1` })
-    .where(and(eq(s.trips.id, tripId), or(isNull(s.trips.turnStartedAt), lt(s.trips.turnStartedAt, staleBefore))))
-    .returning({ id: s.trips.id });
-  return claimed.length === 1;
+  return db.transaction(async (tx) => {
+    // Serializes this user's claims, so two sent at once can't both pass the
+    // one-turn-per-person check below. Released when the transaction ends.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
+    const busy = await runningTurn(tx, userId);
+    if (busy && busy.id !== tripId) throw new ConflictError(stillPlanning(busy.title));
+    const claimed = await tx
+      .update(s.trips)
+      .set({ turnStartedAt: new Date(), turnUserId: userId, revision: sql`${s.trips.revision} + 1` })
+      .where(and(eq(s.trips.id, tripId), or(isNull(s.trips.turnStartedAt), lt(s.trips.turnStartedAt, staleBefore))))
+      .returning({ id: s.trips.id });
+    return claimed.length === 1;
+  });
 }
 
 export async function releaseTurn(tripId: string): Promise<void> {

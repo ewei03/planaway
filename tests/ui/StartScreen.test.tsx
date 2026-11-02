@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { StartScreen } from "@/components/StartScreen";
+import { pickSurpriseTheme, StartScreen, SURPRISE_THEMES } from "@/components/StartScreen";
 
 function setup() {
   const onStart = vi.fn(async () => {});
@@ -71,6 +71,26 @@ describe("StartScreen", () => {
     expect(p).not.toContain("Interests");
   });
 
+  it("Surprise me picks the region itself, a different one each time, and avoids past trips", async () => {
+    const onStart = vi.fn(async () => {});
+    render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} pastDestinations={["Muscat", "Kyoto"]} />);
+    await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));
+    const random = vi.spyOn(Math, "random").mockReturnValueOnce(0).mockReturnValueOnce(0.999);
+    await userEvent.click(screen.getByRole("button", { name: "Surprise me!" }));
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Surprise me!" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "Surprise me!" }));
+    random.mockRestore();
+    const [first, second] = onStart.mock.calls.map((c) => (c as unknown as [string])[0]);
+    expect(first).toContain(`in ${SURPRISE_THEMES[0]}:`);
+    expect(second).toContain(`in ${SURPRISE_THEMES[SURPRISE_THEMES.length - 1]}:`);
+    expect(first).toContain("I've already planned trips to Muscat, Kyoto, so pick somewhere else.");
+  });
+
+  it("covers every theme", () => {
+    const picked = new Set(SURPRISE_THEMES.map((_, i) => pickSurpriseTheme(() => (i + 0.5) / SURPRISE_THEMES.length)));
+    expect(picked.size).toBe(SURPRISE_THEMES.length);
+  });
+
   it("prevents double submits while starting", async () => {
     let finish!: () => void;
     const onStart = vi.fn(() => new Promise<void>((r) => (finish = r)));
@@ -82,5 +102,15 @@ describe("StartScreen", () => {
     finish();
     await vi.waitFor(() => expect(button).toBeEnabled());
     expect(onStart).toHaveBeenCalledOnce();
+  });
+
+  it("waits while PlanAway is still planning another trip", async () => {
+    const onStart = vi.fn(async () => {});
+    const onOpenBusy = vi.fn();
+    render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} busyWith="Lisbon" onOpenBusy={onOpenBusy} />);
+    expect(screen.getByRole("status")).toHaveTextContent("PlanAway is still working on “Lisbon”");
+    expect(screen.getByRole("button", { name: "Plan this trip" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "View progress" }));
+    expect(onOpenBusy).toHaveBeenCalled();
   });
 });

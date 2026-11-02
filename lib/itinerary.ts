@@ -26,13 +26,34 @@ export const ACTIVITY_CATEGORIES = [
 
 export const Activity = z.object({
   id: itemId,
-  time: nullableString.describe('Approximate time, e.g. "09:00" or "Morning"'),
+  time: nullableString.describe(
+    'Start time as 24-hour "HH:MM", e.g. "09:30" or "14:00". Pick a realistic concrete time even when it is approximate; never words like "Morning" or "Late afternoon".',
+  ),
   name: z.string(),
   description: z.string(),
   category: z.enum(ACTIVITY_CATEGORIES),
   est_cost: nullableNumber.describe("Estimated cost for the whole party, in the itinerary currency"),
   url: nullableString,
 });
+
+export const WEATHER_KINDS = ["sunny", "partly_cloudy", "cloudy", "rain", "storm", "snow", "fog", "windy"] as const;
+
+export const Weather = z
+  .object({
+    kind: z.enum(WEATHER_KINDS).describe("The main conditions over the trip, for the icon"),
+    summary: z
+      .string()
+      .describe(
+        "One or two sentences on what weather to expect, in general terms, e.g. " +
+          '"Mild days and chilly evenings; showers are common." No exact temperatures.',
+      ),
+    prepare: z.string().describe('One sentence on how to dress and what to bring, e.g. "Pack layers and a light rain jacket."'),
+  })
+  .nullable()
+  .describe(
+    "What weather to expect over the whole trip, from your research into the destinations' usual conditions at that " +
+      "time of year (or a forecast if the trip is very soon). null if unknown.",
+  );
 
 export const Day = z.object({
   id: itemId,
@@ -80,6 +101,7 @@ export const Itinerary = z.object({
   start_date: nullableString.describe("YYYY-MM-DD"),
   end_date: nullableString.describe("YYYY-MM-DD"),
   travelers: z.number(),
+  weather: Weather,
   currency: z.string().describe("ISO 4217 code, e.g. USD"),
   budget: z.object({
     estimated_total: nullableNumber,

@@ -172,6 +172,21 @@ describe("ItineraryView", () => {
     expect(screen.getByRole("heading", { name: "Day 2: Deer and Todai-ji" })).toBeInTheDocument();
   });
 
+  it("says what weather to expect and how to prepare, without exact temperatures", () => {
+    setup();
+    const note = screen.getByText("What to expect:").closest(".weather-note");
+    expect(note).toHaveTextContent("Mild days and cool evenings; spring showers are common.");
+    expect(note).toHaveTextContent("Pack layers, a light rain jacket, and comfortable waterproof shoes.");
+    expect(note).not.toHaveTextContent(/\d+°/);
+  });
+
+  it("leaves weather out of itineraries saved before it existed", () => {
+    const it = sampleItinerary();
+    delete (it as Partial<typeof it>).weather;
+    setup(undefined, it);
+    expect(screen.queryByText("What to expect:")).toBeNull();
+  });
+
   it("takes comments on activities, not on whole days", () => {
     setup();
     expect(screen.queryByRole("button", { name: /^Comment on Day \d+:/ })).toBeNull();
