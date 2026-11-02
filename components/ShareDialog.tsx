@@ -8,8 +8,6 @@ import { CheckIcon, CopyIcon } from "./icons";
 interface Props {
   tripId: string;
   tripTitle: string;
-  /** "Everyone in <group> can also see this trip", for shared groups. */
-  groupName: string | null;
   onClose: () => void;
   onError: (message: string) => void;
 }
@@ -22,7 +20,7 @@ const EXPIRY_OPTIONS: [string, number | null][] = [
 ];
 
 /** Invite links for one trip, and the people who joined through them. */
-export function ShareDialog({ tripId, tripTitle, groupName, onClose, onError }: Props) {
+export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
   const [sharing, setSharing] = useState<TripSharing | null>(null);
   const [role, setRole] = useState<"editor" | "viewer">("viewer");
   const [expiry, setExpiry] = useState("7");
@@ -192,7 +190,6 @@ export function ShareDialog({ tripId, tripTitle, groupName, onClose, onError }: 
               ))}
             </ul>
           )}
-          {groupName && <p className="muted small">Everyone in {groupName} can also see this trip.</p>}
         </div>
       )}
     </dialog>

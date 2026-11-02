@@ -16,6 +16,7 @@ function setup(overrides: Partial<ComponentProps<typeof Chat>> = {}) {
     onRename: vi.fn(),
     onOpenSidebar: vi.fn(),
     onShowItinerary: vi.fn(),
+    onHide: vi.fn(),
     ...overrides,
   };
   render(<Chat {...props} />);
@@ -25,6 +26,12 @@ function setup(overrides: Partial<ComponentProps<typeof Chat>> = {}) {
 const composer = () => screen.getByPlaceholderText(/Refine the plan/);
 
 describe("Chat", () => {
+  it("can be hidden", async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole("button", { name: "Hide chat" }));
+    expect(props.onHide).toHaveBeenCalled();
+  });
+
   it("prompts editors to describe the trip when empty", () => {
     setup({ trip: tripView({ chat: [] }) });
     expect(screen.getByText(/Describe the trip to get started/)).toBeInTheDocument();

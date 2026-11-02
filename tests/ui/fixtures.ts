@@ -8,12 +8,8 @@ export const sam = { id: "u-sam", name: "Sam" };
 export function tripView(overrides: Partial<TripView> = {}): TripView {
   return {
     id: "11111111-1111-1111-1111-111111111111",
-    groupId: "g1",
-    groupName: "Crew",
     title: "Kyoto Food Weekend",
     role: "owner",
-    canDelete: true,
-    canShare: true,
     sharedBy: null,
     revision: 1,
     itinerary: sampleItinerary(),

@@ -14,12 +14,12 @@ const sharing = (overrides: Partial<TripSharing> = {}): TripSharing => ({
   ...overrides,
 });
 
-function setup(data: TripSharing, { groupName = null as string | null, respond = undefined as ((url: string, init?: RequestInit) => unknown) | undefined } = {}) {
+function setup(data: TripSharing, { respond = undefined as ((url: string, init?: RequestInit) => unknown) | undefined } = {}) {
   const fetch = mockFetch((url, init) => respond?.(url, init) ?? (init?.method ? null : data));
   const props = { onClose: vi.fn(), onError: vi.fn() };
   render(
     <DialogProvider>
-      <ShareDialog tripId={TRIP} tripTitle="Kyoto" groupName={groupName} {...props} />
+      <ShareDialog tripId={TRIP} tripTitle="Kyoto" {...props} />
     </DialogProvider>,
   );
   return { fetch, ...props };
@@ -33,7 +33,7 @@ const clipboard = () => {
 
 describe("ShareDialog", () => {
   it("lists links and the people who joined through them", async () => {
-    setup(sharing(), { groupName: "Ski crew" });
+    setup(sharing());
     expect(await screen.findByRole("heading", { name: "Share “Kyoto”" })).toBeInTheDocument();
     const link = screen.getByRole("textbox", { name: "Invite link" });
     expect(link).toHaveValue(`${location.origin}/invite/tok123`);
@@ -41,13 +41,11 @@ describe("ShareDialog", () => {
     expect(link).toHaveAttribute("title", expect.stringMatching(/^Can view · expires /));
     expect(screen.getByRole("combobox", { name: "Role for Sam" })).toHaveValue("viewer");
     expect(screen.getByText(/gives access to this trip only/)).toBeInTheDocument();
-    expect(screen.getByText("Everyone in Ski crew can also see this trip.")).toBeInTheDocument();
   });
 
-  it("explains when nobody has joined, and skips the group note for personal trips", async () => {
+  it("explains when nobody has joined", async () => {
     setup(sharing({ invites: [], members: [] }));
     expect(await screen.findByText("Nobody has joined through a link yet.")).toBeInTheDocument();
-    expect(screen.queryByText(/can also see this trip/)).toBeNull();
   });
 
   it("creates a link with the chosen role and expiry, and copies it", async () => {
@@ -98,15 +96,15 @@ describe("ShareDialog", () => {
   });
 
   it("reports a load failure and closes", async () => {
-    mockFetch(() => Response.json({ error: "Only the trip's creator or a group owner can share it." }, { status: 403 }));
+    mockFetch(() => Response.json({ error: "Only the trip's owner can share it." }, { status: 403 }));
     const onClose = vi.fn();
     const onError = vi.fn();
     render(
       <DialogProvider>
-        <ShareDialog tripId={TRIP} tripTitle="Kyoto" groupName={null} onClose={onClose} onError={onError} />
+        <ShareDialog tripId={TRIP} tripTitle="Kyoto" onClose={onClose} onError={onError} />
       </DialogProvider>,
     );
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("Only the trip's creator or a group owner can share it."));
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("Only the trip's owner can share it."));
     expect(onClose).toHaveBeenCalled();
   });
 });

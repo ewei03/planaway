@@ -1,17 +1,16 @@
 // Browser-side helpers: API calls, SSE parsing, formatting.
 
+import { useEffect, useState } from "react";
 import type { AgentEvent } from "@/lib/agent";
 import type { ExportFormat } from "@/lib/export";
 import type {
   CommentTarget,
   CommentView,
-  GroupDetail,
-  GroupSummary,
   InvitePreview,
   Role,
   SavedVersion,
-  SharedTripSummary,
   TripSharing,
+  TripSummary,
   TripView,
   UserRef,
 } from "@/lib/store";
@@ -21,13 +20,11 @@ export type {
   CommentTarget,
   CommentView,
   ExportFormat,
-  GroupDetail,
-  GroupSummary,
   InvitePreview,
   Role,
   SavedVersion,
-  SharedTripSummary,
   TripSharing,
+  TripSummary,
   TripView,
   UserRef,
 };
@@ -143,6 +140,37 @@ export function timeAgo(iso: string): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return formatDate(iso);
+}
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+
+/** "just now", "5 minutes ago", "yesterday", "last Friday", "2 weeks ago", "1 month ago"… */
+export function relativeTime(iso: string, now = new Date()): string {
+  const then = new Date(iso);
+  const minutes = Math.floor((now.getTime() - then.getTime()) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return plural(minutes, "minute");
+  // Whole calendar days, so 11pm yesterday is "yesterday", not "0 days ago".
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(now) - midnight(then)) / 86_400_000);
+  if (days === 0 || minutes < 6 * 60) return plural(Math.floor(minutes / 60), "hour");
+  if (days === 1) return "yesterday";
+  if (days < 7) return `last ${WEEKDAYS[then.getDay()]}`;
+  const months = (now.getFullYear() - then.getFullYear()) * 12 + now.getMonth() - then.getMonth() - (now.getDate() < then.getDate() ? 1 : 0);
+  if (months < 1) return plural(Math.floor(days / 7), "week");
+  if (months < 12) return plural(months, "month");
+  return plural(Math.floor(months / 12), "year");
+}
+
+/** Re-renders the caller each minute, so relative times like "5 minutes ago" stay true. */
+export function useMinuteTick(): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 }
 
 export function formatDateTime(iso: string): string {

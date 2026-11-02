@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { AcceptInvite } from "@/components/AcceptInvite";
+import { SiteFooter } from "@/components/SiteFooter";
 import { NotFoundError, getInvitePreview, tripAccess, type InvitePreview } from "@/lib/store";
 
 /**
@@ -41,6 +42,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           </>
         )}
       </div>
+      <SiteFooter />
     </main>
   );
 }

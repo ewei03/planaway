@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { anchorKey, api, canEdit, downloadExport, money, safeUrl, streamMessage, timeAgo, type AgentEvent } from "@/components/client";
+import { anchorKey, api, canEdit, downloadExport, money, relativeTime, safeUrl, streamMessage, timeAgo, type AgentEvent } from "@/components/client";
 import { mockFetch } from "./fixtures";
 
 describe("safeUrl", () => {
@@ -40,6 +40,37 @@ describe("timeAgo", () => {
     expect(timeAgo("2026-10-28T09:00:00Z")).toBe("3h ago");
     expect(timeAgo("2026-10-20T12:00:00Z")).toMatch(/Oct/);
     vi.useRealTimers();
+  });
+});
+
+describe("relativeTime", () => {
+  // Local times, so calendar days don't depend on the test machine's time zone.
+  const at = (month: number, day: number, hour = 15, minute = 0, year = 2026) => new Date(year, month - 1, day, hour, minute).toISOString();
+  const now = new Date(at(10, 28)); // Wednesday, Oct 28 2026, 3pm
+
+  it.each([
+    [new Date(now.getTime() - 30_000).toISOString(), "just now"],
+    [at(10, 28, 14, 59), "1 minute ago"],
+    [at(10, 28, 14, 15), "45 minutes ago"],
+    [at(10, 28, 13, 0), "2 hours ago"],
+    [at(10, 28, 0, 30), "14 hours ago"],
+    [at(10, 27, 9, 0), "yesterday"],
+    [at(10, 25), "last Sunday"],
+    [at(10, 22), "last Thursday"],
+    [at(10, 18), "1 week ago"],
+    [at(10, 8), "2 weeks ago"],
+    [at(9, 29), "4 weeks ago"],
+    [at(9, 28), "1 month ago"],
+    [at(3, 1), "7 months ago"],
+    [at(10, 28, 15, 0, 2025), "1 year ago"],
+    [at(1, 1, 12, 0, 2023), "3 years ago"],
+  ])("%s is %s", (iso, expected) => {
+    expect(relativeTime(iso, now)).toBe(expected);
+  });
+
+  it("says hours, not yesterday, for a few hours ago across midnight", () => {
+    expect(relativeTime(at(10, 27, 23, 0), new Date(at(10, 28, 1, 0)))).toBe("2 hours ago");
+    expect(relativeTime(at(10, 27, 17, 0), new Date(at(10, 28, 1, 0)))).toBe("yesterday");
   });
 });
 

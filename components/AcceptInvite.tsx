@@ -7,7 +7,7 @@ interface Props {
   token: string;
   preview: InvitePreview;
   signedIn: boolean;
-  /** Already in the trip's group, or joined before. */
+  /** Already has access to the trip: its owner, or joined before. */
   hasAccess: boolean;
 }
 

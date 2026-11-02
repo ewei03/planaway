@@ -1,6 +1,6 @@
 # PlanAway
 
-A collaborative trip-planning agent powered by Claude. Describe a trip, or describe what you like and let it pick, and it researches flights, stays, and things to do on the web. It then builds a day-by-day itinerary. Plan it together with your group: everyone shares the conversation with the agent, comments on specific parts of the plan, and the agent works the comments into the next revision.
+A collaborative trip-planning agent powered by Claude. Describe a trip, or describe what you like and let it pick, and it researches flights, stays, and things to do on the web. It then builds a day-by-day itinerary. Plan it together with friends: everyone shares the conversation with the agent, comments on specific parts of the plan, and the agent works the comments into the next revision.
 
 ## Tech stack
 
@@ -64,7 +64,7 @@ Run `npx playwright install chromium` once before the first e2e run.
 
 ## Using it
 
-Create an account. You get a **Personal** group for trips you plan alone.
+Create an account. Your trips are listed in the sidebar under **Your trips**, each with when it was last updated. Rename a trip from its ⋯ menu, or by clicking its title.
 
 **Starting a trip:**
 - **I have an idea**: describe the trip in your own words.
@@ -72,7 +72,7 @@ Create an account. You get a **Personal** group for trips you plan alone.
 - **🎲 Surprise me**: a random destination that fits whatever origin, budget, and dates you entered.
 
 **Planning together:**
-- **Sharing a trip.** Choose **Share…** in a trip's ⋯ menu to create an invite link that lets someone edit or view it. A link gives access to that one trip, never the rest of your trips or the group it's in. Links expire after 1, 7 (the default), or 30 days, or never, and you can revoke them. The same dialog lists who joined, where you can change their role or remove them. A trip's creator and its group's owners can share it.
+- **Sharing a trip.** Choose **Share…** in a trip's ⋯ menu to create an invite link that lets someone edit or view it. A link gives access to that one trip, never the rest of your trips. Links expire after 1, 7 (the default), or 30 days, or never, and you can revoke them. The same dialog lists who joined, where you can change their role or remove them. Only a trip's owner (whoever created it) can share or delete it.
 - **Invite links** open a preview of the trip (title, destinations, dates, summary) that anyone with the link can see. Joining needs an account and an explicit **Join trip** click. Trips shared with you appear under **Shared with you**, where you can leave them. Tokens are 192 random bits.
 
   | Role | Can |
@@ -80,9 +80,7 @@ Create an account. You get a **Personal** group for trips you plan alone.
   | Editor | Change the itinerary with the agent, rename the trip, save versions, comment, export |
   | Viewer | View the itinerary, comment, export |
 
-- **Groups** are folders of trips. Everyone in a group sees all its trips, as an owner, editor, or viewer. Owners manage members and can delete the group. Owners can't change their own role; to step down, use **Transfer ownership**, which makes another member the owner and you an editor. There are no group invite links: to bring someone new in, share a trip.
-
-- **Shared chat.** Everyone in the group sees the conversation with the agent, and messages show who sent them. One person's request runs at a time. Others see "Maya is asking PlanAway…" and get the result when it finishes.
+- **Shared chat.** Everyone the trip is shared with sees the conversation with the agent, and messages show who sent them. One person's request runs at a time. Others see "Maya is asking PlanAway…" and get the result when it finishes.
 - **Comments.** Click 💬 next to any activity, day, flight, stay, or budget line (or the trip title) to start a thread, e.g. "too pricey" or "vegetarian options?". Threads can be replied to, resolved, and reopened. On the next turn the agent sees new comments, changes the plan, replies in the threads, and resolves the ones it addressed. **✨ Ask PlanAway to address open comments** in the comments panel triggers that directly.
 - Open tabs check for collaborators' changes every 4 seconds. The same check shows who else has the trip open, as initials next to 💬 above the itinerary.
 
@@ -102,7 +100,7 @@ Each trip keeps the full API transcript (`trip_messages`), so later refinements 
 
 Code layout:
 
-- `app/api/…`: route handlers: registration and Auth.js, groups, members, trips, trip sharing and invite links, messages (streamed), comments, versions, exports, and the revision endpoint collaborators poll
+- `app/api/…`: route handlers: registration and Auth.js, trips, trip sharing and invite links, messages (streamed), comments, versions, exports, and the revision endpoint collaborators poll
 - `app/login`, `app/invite/[token]`: sign-in, and the invite page that previews a shared trip
 - `components/`: the React UI. `PlanAway.tsx` holds app state.
 - `lib/db/`: the Drizzle schema and connection (PGlite or Postgres)

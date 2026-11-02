@@ -33,6 +33,21 @@ function setup(overrides: Partial<ComponentProps<typeof ItineraryPane>> = {}) {
 const version = { id: "v1", label: "First draft", savedAt: "2026-10-01T10:00:00Z", savedBy: me.id, itinerary: { ...sampleItinerary(), title: "Old plan" } };
 
 describe("ItineraryPane", () => {
+  it("offers to bring back a hidden chat, and the trips if those are hidden too", async () => {
+    const { props, view } = setup();
+    expect(screen.queryByRole("button", { name: "Show chat" })).toBeNull();
+    view.unmount();
+
+    const onShowChat = vi.fn();
+    const onShowTrips = vi.fn();
+    setup({ chatHidden: true, onShowChat, onShowTrips });
+    await userEvent.click(screen.getByRole("button", { name: "Show chat" }));
+    expect(onShowChat).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Show trips" }));
+    expect(onShowTrips).toHaveBeenCalled();
+    expect(props.onBack).not.toHaveBeenCalled();
+  });
+
   it("shows an empty state that depends on whether the agent is working", () => {
     const { view } = setup({ trip: tripView({ itinerary: null }) });
     expect(screen.getByText(/No itinerary yet/)).toBeInTheDocument();
@@ -88,7 +103,7 @@ describe("ItineraryPane", () => {
   });
 
   it("lets viewers export but not save", () => {
-    setup({ trip: tripView({ role: "viewer", canDelete: false, canShare: false }) });
+    setup({ trip: tripView({ role: "viewer", sharedBy: { id: "u-sam", name: "Sam" } }) });
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.getByRole("button", { name: "Export ▾" })).toBeEnabled();
   });

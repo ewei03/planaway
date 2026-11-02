@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { canEdit, type SessionUser, type TripView } from "./client";
+import { canEdit, relativeTime, useMinuteTick, type SessionUser, type TripView } from "./client";
 import { Markdown } from "./Markdown";
 
 /** A turn this tab sent that isn't in the saved chat log yet: in flight, or failed. */
@@ -21,13 +21,16 @@ interface Props {
   onRename: (title: string) => void;
   onOpenSidebar: () => void;
   onShowItinerary: () => void;
+  /** Collapses the chat so the itinerary takes the full width (wide screens only). */
+  onHide: () => void;
 }
 
-export function Chat({ trip, user, live, working, status, onSend, onRename, onOpenSidebar, onShowItinerary }: Props) {
+export function Chat({ trip, user, live, working, status, onSend, onRename, onOpenSidebar, onShowItinerary, onHide }: Props) {
   const [draft, setDraft] = useState("");
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const editable = canEdit(trip.role);
+  useMinuteTick();
 
   // Keep the newest message in view as the reply streams in.
   const lastReply = live.at(-1)?.reply;
@@ -86,20 +89,23 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
               }}
             />
           )}
-          <span className="trip-group muted">
-            {/* Another person's group name means nothing to someone the trip was shared with. */}
-            {trip.sharedBy ? `Shared by ${trip.sharedBy.name}` : trip.groupName} · {trip.role}
+          <span className="trip-meta muted">
+            Updated {relativeTime(trip.updatedAt)}
+            {trip.sharedBy && ` · Shared by ${trip.sharedBy.name} · ${trip.role}`}
           </span>
         </div>
         <button className="btn icon mobile-only" id="show-itinerary" aria-label="Show itinerary" onClick={onShowItinerary}>
           🗺
+        </button>
+        <button className="icon-btn wide-only hide-chat" title="Hide chat" aria-label="Hide chat" onClick={onHide}>
+          «
         </button>
       </div>
 
       <div className="messages" ref={messagesRef} aria-live="polite">
         {trip.chat.length === 0 && live.length === 0 && (
           <p className="muted chat-empty">
-            {editable ? "Describe the trip to get started. Everyone in the group sees this conversation." : "No messages yet."}
+            {editable ? "Describe the trip to get started. Everyone you share the trip with sees this conversation." : "No messages yet."}
           </p>
         )}
         {trip.chat.map((m) =>

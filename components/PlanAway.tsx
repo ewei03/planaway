@@ -5,19 +5,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat, type LiveTurn } from "./Chat";
 import {
   api,
-  canEdit,
   downloadExport,
   streamMessage,
   type AgentEvent,
   type ExportFormat,
-  type GroupSummary,
   type SessionUser,
-  type SharedTripSummary,
+  type TripSummary,
   type TripView,
   type UserRef,
 } from "./client";
 import { useDialogs } from "./Dialogs";
-import { GroupDialog } from "./GroupDialog";
 import { ItineraryPane } from "./ItineraryPane";
 import { MapsProvider, type MapsConfig } from "./places";
 import { ShareDialog } from "./ShareDialog";
@@ -30,16 +27,14 @@ const ASK_ABOUT_COMMENTS = "Please go through the open comments and update the p
 // Below this width the sidebar is a drawer (see globals.css) instead of a column.
 const DRAWER_QUERY = "(max-width: 760px)";
 const COLLAPSED_KEY = "planaway:sidebar-collapsed";
+const CHAT_HIDDEN_KEY = "planaway:chat-hidden";
 // The chat's share of the workspace width; the itinerary gets the rest.
 const SPLIT_KEY = "planaway:chat-split";
 const DEFAULT_SPLIT = 0.44;
 
 export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }) {
-  const [groups, setGroups] = useState<GroupSummary[]>([]);
-  // Until the first load, there's no group to create a trip in yet.
-  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [trips, setTrips] = useState<TripSummary[]>([]);
   const [trip, setTrip] = useState<TripView | null>(null);
-  const [newTripGroup, setNewTripGroup] = useState<string | null>(null);
   const [viewing, setViewing] = useState("current");
   const [live, setLive] = useState<LiveTurn[]>([]);
   const [streamingHere, setStreamingHere] = useState(false);
@@ -47,10 +42,10 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   // sidebarOpen is the phone drawer; sidebarCollapsed hides the desktop column.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Hides the chat column on wide screens so the itinerary gets the full width.
+  const [chatHidden, setChatHidden] = useState(false);
   const [showItinerary, setShowItinerary] = useState(false);
   const [split, setSplit] = useState(DEFAULT_SPLIT);
-  const [managingGroup, setManagingGroup] = useState<string | null>(null);
-  const [shared, setShared] = useState<SharedTripSummary[]>([]);
   const [sharingTrip, setSharingTrip] = useState<string | null>(null);
   /** Other people with the open trip on screen right now. */
   const [viewers, setViewers] = useState<UserRef[]>([]);
@@ -73,6 +68,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   useEffect(() => {
     try {
       if (localStorage.getItem(COLLAPSED_KEY) === "1") setSidebarCollapsed(true);
+      if (localStorage.getItem(CHAT_HIDDEN_KEY) === "1") setChatHidden(true);
       const saved = Number(localStorage.getItem(SPLIT_KEY));
       if (saved > 0) setSplit(clampSplit(saved));
     } catch {}
@@ -92,6 +88,13 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     } catch {}
   };
 
+  const hideChat = (hidden: boolean) => {
+    setChatHidden(hidden);
+    try {
+      localStorage.setItem(CHAT_HIDDEN_KEY, hidden ? "1" : "0");
+    } catch {}
+  };
+
   const showSidebar = () => {
     collapseSidebar(false);
     setSidebarOpen(true);
@@ -102,16 +105,9 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     else collapseSidebar(true);
   };
 
-  /** Reloads the sidebar: the user's groups and the trips shared with them. */
-  const loadGroups = useCallback(() => {
-    Promise.all([api<GroupSummary[]>("/api/groups"), api<SharedTripSummary[]>("/api/trips/shared")]).then(
-      ([g, sharedTrips]) => {
-        setGroups(g);
-        setShared(sharedTrips);
-        setGroupsLoaded(true);
-      },
-      (err: Error) => notify(err.message),
-    );
+  /** Reloads the sidebar: the user's trips and the ones shared with them. */
+  const loadTrips = useCallback(() => {
+    api<TripSummary[]>("/api/trips").then(setTrips, (err: Error) => notify(err.message));
   }, [notify]);
 
   const showTrip = useCallback((next: TripView | null) => {
@@ -146,10 +142,10 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
   }, []);
 
   useEffect(() => {
-    loadGroups();
+    loadTrips();
     const initial = new URLSearchParams(location.search).get("trip");
     if (initial) openTrip(initial);
-  }, [loadGroups, openTrip]);
+  }, [loadTrips, openTrip]);
 
   // Collaboration: poll the trip's revision and refetch when anyone changes
   // it. Paused while this tab streams its own turn. Each poll also says this
@@ -166,13 +162,13 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
       setViewers(r.viewers);
       if (r.revision !== revision) {
         await refreshTrip();
-        loadGroups();
+        loadTrips();
       }
     };
     poll();
     const timer = setInterval(poll, POLL_MS);
     return () => clearInterval(timer);
-  }, [tripId, revision, streamingHere, refreshTrip, loadGroups]);
+  }, [tripId, revision, streamingHere, refreshTrip, loadTrips]);
 
   // Someone else (or this user in another tab) is running a turn.
   const busyElsewhere = !streamingHere && trip?.busy ? trip.busy : null;
@@ -222,18 +218,14 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
         setLive((turns) => turns.filter((t) => t.error));
         setStreamingHere(false);
       }
-      loadGroups();
+      loadTrips();
     },
-    [loadGroups, refreshTrip],
+    [loadTrips, refreshTrip],
   );
 
-  const editableGroups = groups.filter((g) => canEdit(g.role));
-  const startGroupId = newTripGroup && editableGroups.some((g) => g.id === newTripGroup) ? newTripGroup : editableGroups[0]?.id;
-
   const startTrip = async (prompt: string) => {
-    if (!startGroupId) return notify("You need editor access to a group to create trips.");
     try {
-      const created = await api<{ id: string }>("/api/trips", { method: "POST", body: JSON.stringify({ groupId: startGroupId }) });
+      const created = await api<{ id: string }>("/api/trips", { method: "POST" });
       showTrip(await api<TripView>(`/api/trips/${created.id}`));
       await sendMessage(created.id, prompt);
     } catch (err) {
@@ -241,12 +233,11 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     }
   };
 
-  const rename = async (title: string) => {
-    if (!trip) return;
+  const rename = async (tripId: string, title: string) => {
     try {
-      await api(`/api/trips/${trip.id}`, { method: "PATCH", body: JSON.stringify({ title }) });
-      await refreshTrip();
-      loadGroups();
+      await api(`/api/trips/${tripId}`, { method: "PATCH", body: JSON.stringify({ title }) });
+      if (activeId.current === tripId) await refreshTrip();
+      loadTrips();
     } catch (err) {
       notify((err as Error).message);
     }
@@ -254,14 +245,18 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
 
   // Trip actions from the sidebar menu. They work on any trip in the list, not
   // just the one that's open.
-  const findTrip = (tripId: string) => {
-    for (const g of groups) {
-      const t = g.trips.find((t) => t.id === tripId);
-      // Personal groups have no one else to mention.
-      if (t) return { ...t, sharedGroup: g.personal ? null : g.name };
-    }
-    const t = shared.find((t) => t.id === tripId);
-    return t ? { ...t, sharedGroup: null } : null;
+  const findTrip = (tripId: string) => trips.find((t) => t.id === tripId) ?? null;
+
+  const askRename = async (tripId: string) => {
+    const target = findTrip(tripId);
+    if (!target) return;
+    const title = await dialogs.ask({
+      title: "Rename trip",
+      label: "Trip name",
+      defaultValue: target.title,
+      confirmText: "Rename",
+    });
+    if (title && title !== target.title) await rename(tripId, title);
   };
 
   const saveVersion = async (tripId: string) => {
@@ -301,7 +296,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     try {
       await api(`/api/trips/${tripId}`, { method: "DELETE" });
       if (activeId.current === tripId) showTrip(null);
-      loadGroups();
+      loadTrips();
       notify("Trip deleted");
     } catch (err) {
       notify((err as Error).message);
@@ -322,26 +317,8 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     try {
       await api(`/api/trips/${tripId}/members/${user.id}`, { method: "DELETE" });
       if (activeId.current === tripId) showTrip(null);
-      loadGroups();
+      loadTrips();
       notify("You left the trip");
-    } catch (err) {
-      notify((err as Error).message);
-    }
-  };
-
-  const newGroup = async () => {
-    const name = await dialogs.ask({
-      title: "New group",
-      message: "Trips in a group are shared with everyone you invite to it.",
-      label: "Group name",
-      placeholder: "e.g. Ski crew, Family",
-      confirmText: "Create group",
-    });
-    if (!name) return;
-    try {
-      const { id } = await api<{ id: string }>("/api/groups", { method: "POST", body: JSON.stringify({ name }) });
-      loadGroups();
-      setManagingGroup(id);
     } catch (err) {
       notify((err as Error).message);
     }
@@ -357,16 +334,11 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
       >
         <Sidebar
           user={user}
-          groups={groups}
-          shared={shared}
+          trips={trips}
           activeId={trip?.id ?? null}
           onSelect={openTrip}
-          onNewTrip={(groupId) => {
-            setNewTripGroup(groupId);
-            showTrip(null);
-          }}
-          onNewGroup={newGroup}
-          onManageGroup={setManagingGroup}
+          onNewTrip={() => showTrip(null)}
+          onRename={askRename}
           onSaveVersion={saveVersion}
           onExport={exportTrip}
           onShare={setSharingTrip}
@@ -379,7 +351,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
         <main className="main">
           {trip ? (
             <section
-              className={`workspace ${showItinerary ? "show-itinerary" : ""}`}
+              className={`workspace ${showItinerary ? "show-itinerary" : ""} ${chatHidden ? "chat-hidden" : ""}`}
               style={{ "--chat-fr": `${split}fr`, "--pane-fr": `${1 - split}fr` } as React.CSSProperties}
             >
               <Chat
@@ -389,9 +361,10 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
                 working={working}
                 status={statusText}
                 onSend={(text) => sendMessage(trip.id, text)}
-                onRename={rename}
+                onRename={(title) => rename(trip.id, title)}
                 onOpenSidebar={showSidebar}
                 onShowItinerary={() => setShowItinerary(true)}
+                onHide={() => hideChat(true)}
               />
               <SplitHandle split={split} onChange={resizeSplit} onReset={() => resizeSplit(DEFAULT_SPLIT)} />
               <ItineraryPane
@@ -404,42 +377,23 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
                 onSaveVersion={() => saveVersion(trip.id)}
                 onExport={(format) => exportTrip(trip.id, format)}
                 onBack={() => setShowItinerary(false)}
+                chatHidden={chatHidden}
+                onShowChat={() => hideChat(false)}
+                onShowTrips={sidebarCollapsed ? showSidebar : undefined}
                 onChanged={refreshTrip}
                 onAskAgent={() => sendMessage(trip.id, ASK_ABOUT_COMMENTS)}
                 onError={notify}
               />
             </section>
           ) : (
-            <StartScreen
-              groups={editableGroups}
-              groupId={startGroupId ?? ""}
-              onGroupChange={setNewTripGroup}
-              onStart={startTrip}
-              onOpenSidebar={showSidebar}
-              loading={!groupsLoaded}
-            />
+            <StartScreen onStart={startTrip} onOpenSidebar={showSidebar} />
           )}
         </main>
-
-        {managingGroup && (
-          <GroupDialog
-            groupId={managingGroup}
-            user={user}
-            onClose={() => setManagingGroup(null)}
-            onChanged={loadGroups}
-            onGone={() => {
-              setManagingGroup(null);
-              if (trip && trip.groupId === managingGroup) showTrip(null);
-            }}
-            onError={notify}
-          />
-        )}
 
         {sharingTrip && (
           <ShareDialog
             tripId={sharingTrip}
             tripTitle={findTrip(sharingTrip)?.title ?? "trip"}
-            groupName={findTrip(sharingTrip)?.sharedGroup ?? null}
             onClose={() => setSharingTrip(null)}
             onError={notify}
           />

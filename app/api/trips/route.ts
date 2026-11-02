@@ -1,9 +1,13 @@
-import { body, handler, jsonError, requireUser, str } from "@/lib/http";
-import { createTrip } from "@/lib/store";
+import { handler, requireUser } from "@/lib/http";
+import { createTrip, listTrips } from "@/lib/store";
 
-export const POST = handler(async (req: Request) => {
+/** The signed-in user's trips and the ones shared with them. */
+export const GET = handler(async () => {
   const user = await requireUser();
-  const groupId = str((await body(req)).groupId, 64);
-  if (!groupId) return jsonError("groupId is required.", 400);
-  return Response.json(await createTrip(user.id, groupId), { status: 201 });
+  return Response.json(await listTrips(user.id));
+});
+
+export const POST = handler(async () => {
+  const user = await requireUser();
+  return Response.json(await createTrip(user.id), { status: 201 });
 });

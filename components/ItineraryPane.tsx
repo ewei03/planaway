@@ -32,6 +32,11 @@ interface Props {
   /** Exports the version on screen. */
   onExport: (format: ExportFormat) => void;
   onBack: () => void;
+  /** The chat is collapsed: offer to bring it back (wide screens only). */
+  chatHidden?: boolean;
+  onShowChat?: () => void;
+  /** Set while the sidebar is collapsed, so it can be reopened with the chat hidden. */
+  onShowTrips?: () => void;
   onChanged: () => void;
   onAskAgent: () => void;
   onError: (message: string) => void;
@@ -39,6 +44,7 @@ interface Props {
 
 export function ItineraryPane(props: Props) {
   const { trip, user, viewing, viewers = [], working, onView, onSaveVersion, onExport, onBack, onChanged, onAskAgent, onError } = props;
+  const { chatHidden = false, onShowChat, onShowTrips } = props;
   const [exportOpen, setExportOpen] = useState(false);
   // undefined: panel closed; null: all comments; otherwise one item's threads.
   const [commentAnchor, setCommentAnchor] = useState<CommentAnchor | null | undefined>(undefined);
@@ -79,6 +85,16 @@ export function ItineraryPane(props: Props) {
         <button className="btn icon mobile-only" id="hide-itinerary" aria-label="Back to chat" onClick={onBack}>
           ←
         </button>
+        {chatHidden && onShowTrips && (
+          <button className="btn icon wide-only" aria-label="Show trips" title="Show trips" onClick={onShowTrips}>
+            ☰
+          </button>
+        )}
+        {chatHidden && onShowChat && (
+          <button className="btn wide-only show-chat" aria-label="Show chat" title="Show chat" onClick={onShowChat}>
+            » Chat
+          </button>
+        )}
         <select aria-label="Itinerary version" value={viewing} onChange={(e) => onView(e.target.value)}>
           <option value="current">Current draft</option>
           {[...trip.versions].reverse().map((v) => (

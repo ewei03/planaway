@@ -2,41 +2,27 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { GroupSummary, SharedTripSummary } from "@/components/client";
+import type { TripSummary } from "@/components/client";
 import { Sidebar } from "@/components/Sidebar";
 import { me } from "./fixtures";
 
-const trip = { groupId: "p", destinations: [], updatedAt: "2026-10-01T00:00:00Z", hasItinerary: true, canDelete: true, canShare: true };
+const trip = { destinations: [] as string[], updatedAt: new Date(Date.now() - 5 * 60_000).toISOString(), hasItinerary: true, role: "owner", sharedBy: null } as const;
 
-const groups: GroupSummary[] = [
-  {
-    id: "p",
-    name: "Personal",
-    personal: true,
-    role: "owner",
-    memberCount: 1,
-    trips: [
-      { ...trip, id: "t1", title: "Kyoto", destinations: ["Kyoto", "Nara", "Osaka", "Kobe"] },
-      { ...trip, id: "t2", title: "Draft", hasItinerary: false },
-    ],
-  },
-  { id: "v", name: "Family", personal: false, role: "viewer", memberCount: 4, trips: [{ ...trip, id: "t3", groupId: "v", title: "Lisbon", canDelete: false, canShare: false }] },
+const trips: TripSummary[] = [
+  { ...trip, id: "t1", title: "Kyoto", destinations: ["Kyoto", "Nara"] },
+  { ...trip, id: "t3", title: "Lisbon", role: "viewer", sharedBy: "Ana" },
+  { ...trip, id: "t2", title: "Draft", hasItinerary: false },
+  { ...trip, id: "t4", title: "Oslo", role: "editor", sharedBy: "Sam" },
 ];
 
-const shared: SharedTripSummary[] = [
-  { ...trip, id: "t4", groupId: "x", title: "Oslo", role: "viewer", sharedBy: "Sam", canDelete: false, canShare: false },
-];
-
-function setup(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) {
-  const props: ComponentProps<typeof Sidebar> = {
+function setupProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}): ComponentProps<typeof Sidebar> {
+  return {
     user: me,
-    groups,
-    shared,
+    trips,
     activeId: "t1",
     onSelect: vi.fn(),
     onNewTrip: vi.fn(),
-    onNewGroup: vi.fn(),
-    onManageGroup: vi.fn(),
+    onRename: vi.fn(),
     onSaveVersion: vi.fn(),
     onExport: vi.fn(),
     onShare: vi.fn(),
@@ -46,6 +32,10 @@ function setup(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) {
     onHide: vi.fn(),
     ...overrides,
   };
+}
+
+function setup(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) {
+  const props = setupProps(overrides);
   render(<Sidebar {...props} />);
   return props;
 }
@@ -54,33 +44,56 @@ const openMenu = (title: string) => userEvent.click(screen.getByRole("button", {
 const menuItems = () => screen.getAllByRole("menuitem").map((m) => m.textContent);
 
 describe("Sidebar", () => {
-  it("lists groups and trips, marking the active trip", () => {
+  it("lists your trips and trips shared with you, marking the active trip", () => {
     setup();
-    expect(screen.getByRole("heading", { name: "Personal" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Family · 4" })).toBeInTheDocument();
-    const active = screen.getByRole("button", { name: /^Kyoto/ });
-    expect(active).toHaveClass("active");
-    expect(active).toHaveTextContent("Kyoto, Nara, Osaka");
-    expect(active).not.toHaveTextContent("Kobe");
+    const [mine, shared] = screen.getAllByRole("list").map((l) => within(l).getAllByRole("button", { name: /^(?!Options)/ }).map((b) => b.querySelector(".t-title")?.textContent));
+    expect(mine).toEqual(["Kyoto", "Draft"]);
+    expect(shared).toEqual(["Lisbon", "Oslo"]);
+    expect(screen.getByRole("heading", { name: "Your trips" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Shared with you" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Kyoto/ })).toHaveClass("active");
   });
 
-  it("shows an empty state for a group with no trips", () => {
-    setup({ groups: [{ ...groups[0], trips: [] }] });
+  it("says when each trip was last updated", () => {
+    setup();
+    expect(screen.getByRole("button", { name: /^Kyoto/ })).toHaveTextContent("Updated 5 minutes ago");
+    expect(screen.getByRole("button", { name: /^Oslo/ })).toHaveTextContent("Updated 5 minutes ago");
+  });
+
+  it("sorts by last update, newest first by default, and remembers the choice", async () => {
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+    const dated: TripSummary[] = [
+      { ...trip, id: "a", title: "Old", updatedAt: ago(30) },
+      { ...trip, id: "b", title: "New", updatedAt: ago(1) },
+      { ...trip, id: "c", title: "Mid", updatedAt: ago(7) },
+      { ...trip, id: "d", title: "Shared old", role: "viewer", sharedBy: "Sam", updatedAt: ago(20) },
+      { ...trip, id: "e", title: "Shared new", role: "viewer", sharedBy: "Sam", updatedAt: ago(2) },
+    ];
+    const titles = () => [...document.querySelectorAll(".t-title")].map((t) => t.textContent);
+    localStorage.removeItem("planaway:trip-sort");
+    const { unmount } = render(<Sidebar {...setupProps({ trips: dated })} />);
+    const select = screen.getByRole("combobox", { name: "Sort trips" });
+    expect(select).toHaveValue("newest");
+    expect(titles()).toEqual(["New", "Mid", "Old", "Shared new", "Shared old"]);
+
+    await userEvent.selectOptions(select, "oldest");
+    expect(titles()).toEqual(["Old", "Mid", "New", "Shared old", "Shared new"]);
+
+    unmount();
+    render(<Sidebar {...setupProps({ trips: dated })} />);
+    expect(screen.getByRole("combobox", { name: "Sort trips" })).toHaveValue("oldest");
+    localStorage.removeItem("planaway:trip-sort");
+  });
+
+  it("shows an empty state when you have no trips of your own", () => {
+    setup({ trips: trips.filter((t) => t.role !== "owner") });
     expect(screen.getByText("No trips yet.")).toBeInTheDocument();
-  });
-
-  it("only offers new trips in shared groups you can edit, and settings for shared groups", () => {
-    setup();
-    expect(screen.queryByRole("button", { name: "New trip in Personal" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "New trip in Family" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Manage Family" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Manage Personal" })).toBeNull();
   });
 
   it("opens a trip menu with share, save, export, and delete", async () => {
     const props = setup();
     await openMenu("Kyoto");
-    expect(menuItems()).toEqual(["Share…", "Save version…", "Export as…›", "Delete trip…"]);
+    expect(menuItems()).toEqual(["Rename…", "Share…", "Save version…", "Export as…›", "Delete trip…"]);
 
     await userEvent.hover(screen.getByRole("menuitem", { name: /Export as/ }));
     const formats = screen.getByRole("menu", { name: "Export as" });
@@ -99,6 +112,10 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("menu")).toBeNull();
 
     await openMenu("Kyoto");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
+    expect(props.onRename).toHaveBeenCalledWith("t1");
+
+    await openMenu("Kyoto");
     await userEvent.click(screen.getByRole("menuitem", { name: "Share…" }));
     expect(props.onShare).toHaveBeenCalledWith("t1");
 
@@ -112,18 +129,16 @@ describe("Sidebar", () => {
     expect(props.onSelect).not.toHaveBeenCalled();
   });
 
-  it("lists trips shared with you, which you can export or leave but not share or delete", async () => {
+  it("lets editors of a shared trip rename, save, export, or leave it, but not share or delete it", async () => {
     const props = setup();
-    expect(screen.getByRole("heading", { name: "Shared with you" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Oslo/ })).toHaveTextContent("From Sam");
     await openMenu("Oslo");
-    expect(menuItems()).toEqual(["Export as…›", "Leave trip…"]);
+    expect(menuItems()).toEqual(["Rename…", "Save version…", "Export as…›", "Leave trip…"]);
     await userEvent.click(screen.getByRole("menuitem", { name: "Leave trip…" }));
     expect(props.onLeave).toHaveBeenCalledWith("t4");
   });
 
   it("hides the shared section when nothing is shared with you", () => {
-    setup({ shared: [] });
+    setup({ trips: trips.filter((t) => t.role === "owner") });
     expect(screen.queryByRole("heading", { name: "Shared with you" })).toBeNull();
   });
 
@@ -135,10 +150,10 @@ describe("Sidebar", () => {
     expect(screen.getByRole("menuitem", { name: "Delete trip…" })).toBeEnabled();
   });
 
-  it("only lets viewers export", async () => {
+  it("only lets viewers export or leave", async () => {
     setup();
     await openMenu("Lisbon");
-    expect(menuItems()).toEqual(["Export as…›"]);
+    expect(menuItems()).toEqual(["Export as…›", "Leave trip…"]);
   });
 
   it("opens the export submenu with a click or the keyboard", async () => {
@@ -173,11 +188,7 @@ describe("Sidebar", () => {
     await userEvent.click(screen.getByRole("button", { name: /^Kyoto/ }));
     expect(props.onSelect).toHaveBeenCalledWith("t1");
     await userEvent.click(screen.getByRole("button", { name: "+ New trip" }));
-    expect(props.onNewTrip).toHaveBeenCalledWith("p");
-    await userEvent.click(screen.getByRole("button", { name: "Manage Family" }));
-    expect(props.onManageGroup).toHaveBeenCalledWith("v");
-    await userEvent.click(screen.getByRole("button", { name: "+ New group" }));
-    expect(props.onNewGroup).toHaveBeenCalled();
+    expect(props.onNewTrip).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(props.onSignOut).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Hide trips" }));

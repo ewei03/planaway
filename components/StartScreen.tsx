@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { GroupSummary } from "./client";
+import { SiteFooter } from "./SiteFooter";
 
 const INTERESTS = [
   ["food & drink", "Food & drink"],
@@ -76,17 +76,11 @@ function surprisePrompt(f: BuildForm): string {
 }
 
 interface Props {
-  /** Groups the user can create trips in. */
-  groups: GroupSummary[];
-  groupId: string;
-  onGroupChange: (groupId: string) => void;
   onStart: (prompt: string) => Promise<void>;
   onOpenSidebar: () => void;
-  /** Groups are still loading: starting a trip has to wait. */
-  loading?: boolean;
 }
 
-export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSidebar, loading = false }: Props) {
+export function StartScreen({ onStart, onOpenSidebar }: Props) {
   const [tab, setTab] = useState<"idea" | "build">("idea");
   const [idea, setIdea] = useState("");
   const [form, setForm] = useState<BuildForm>(EMPTY_FORM);
@@ -127,19 +121,6 @@ export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSid
           flights, stays, and things to do on the web, then builds an itinerary you can refine, save, and export.
         </p>
 
-        {groups.length > 1 && (
-          <div className="plan-in">
-            <label htmlFor="plan-in">Plan in</label>
-            <select id="plan-in" value={groupId} onChange={(e) => onGroupChange(e.target.value)}>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.personal ? "Personal (just you)" : `${g.name} (${g.memberCount} member${g.memberCount === 1 ? "" : "s"})`}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         <div className="tabs" role="tablist">
           {(
             [
@@ -171,7 +152,7 @@ export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSid
               placeholder="e.g. 10 days in Japan next April for two, Tokyo and Kyoto, love food and design, about $6,000 total from San Francisco"
             />
             <div className="form-actions">
-              <button className="btn primary" type="submit" disabled={starting || loading}>
+              <button className="btn primary" type="submit" disabled={starting}>
                 Plan this trip
               </button>
             </div>
@@ -245,10 +226,10 @@ export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSid
             />
 
             <div className="form-actions">
-              <button className="btn ghost" type="button" disabled={starting || loading} onClick={() => start(surprisePrompt(form))}>
+              <button className="btn ghost" type="button" disabled={starting} onClick={() => start(surprisePrompt(form))}>
                 🎲 Surprise me!
               </button>
-              <button className="btn primary" type="submit" disabled={starting || loading}>
+              <button className="btn primary" type="submit" disabled={starting}>
                 Build my trip
               </button>
             </div>
@@ -256,6 +237,7 @@ export function StartScreen({ groups, groupId, onGroupChange, onStart, onOpenSid
           </form>
         )}
       </div>
+      <SiteFooter />
     </section>
   );
 }

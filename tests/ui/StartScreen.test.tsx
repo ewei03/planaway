@@ -1,17 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { GroupSummary } from "@/components/client";
 import { StartScreen } from "@/components/StartScreen";
 
-const personal: GroupSummary = { id: "p", name: "Personal", personal: true, role: "owner", memberCount: 1, trips: [] };
-const crew: GroupSummary = { id: "c", name: "Ski crew", personal: false, role: "editor", memberCount: 3, trips: [] };
-
-function setup(groups = [personal]) {
+function setup() {
   const onStart = vi.fn(async () => {});
-  const onGroupChange = vi.fn();
-  render(<StartScreen groups={groups} groupId={groups[0].id} onGroupChange={onGroupChange} onStart={onStart} onOpenSidebar={vi.fn()} />);
-  return { onStart, onGroupChange };
+  render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} />);
+  return { onStart };
 }
 
 const prompt = (onStart: ReturnType<typeof setup>["onStart"]) => (onStart.mock.calls[0] as unknown as [string])[0];
@@ -69,7 +64,7 @@ describe("StartScreen", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));
     await userEvent.type(screen.getByLabelText("Leaving from"), "Denver");
     await userEvent.click(screen.getByLabelText("Nightlife"));
-    await userEvent.click(screen.getByRole("button", { name: "🎲 Surprise me" }));
+    await userEvent.click(screen.getByRole("button", { name: "🎲 Surprise me!" }));
     const p = prompt(onStart);
     expect(p).toMatch(/^Surprise me!/);
     expect(p).toContain("Leaving from: Denver.");
@@ -79,7 +74,7 @@ describe("StartScreen", () => {
   it("prevents double submits while starting", async () => {
     let finish!: () => void;
     const onStart = vi.fn(() => new Promise<void>((r) => (finish = r)));
-    render(<StartScreen groups={[personal]} groupId="p" onGroupChange={vi.fn()} onStart={onStart} onOpenSidebar={vi.fn()} />);
+    render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} />);
     await userEvent.type(screen.getByLabelText("Your trip idea"), "Paris");
     const button = screen.getByRole("button", { name: "Plan this trip" });
     await userEvent.click(button);
@@ -88,22 +83,4 @@ describe("StartScreen", () => {
     await vi.waitFor(() => expect(button).toBeEnabled());
     expect(onStart).toHaveBeenCalledOnce();
   });
-
-  it("only offers a group picker when there is a choice", async () => {
-    setup([personal]);
-    expect(screen.queryByLabelText("Plan in")).toBeNull();
-  });
-
-  it("lets you pick the group to plan in", async () => {
-    const { onGroupChange } = setup([personal, crew]);
-    const select = screen.getByLabelText("Plan in");
-    expect(screen.getByRole("option", { name: "Ski crew (3 members)" })).toBeInTheDocument();
-    await userEvent.selectOptions(select, "c");
-    expect(onGroupChange).toHaveBeenCalledWith("c");
-  });
-});
-
-it("waits for groups to load before starting a trip", () => {
-  render(<StartScreen groups={[]} groupId="" onGroupChange={vi.fn()} onStart={vi.fn()} onOpenSidebar={vi.fn()} loading />);
-  expect(screen.getByRole("button", { name: "Plan this trip" })).toBeDisabled();
 });

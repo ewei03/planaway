@@ -3,6 +3,7 @@
 import { signIn } from "next-auth/react";
 import { useState, type FormEvent } from "react";
 import { api } from "./client";
+import { SiteFooter } from "./SiteFooter";
 
 export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
   const [mode, setMode] = useState<"signin" | "register">("signin");
@@ -46,7 +47,7 @@ export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
           <span>PlanAway</span>
         </div>
         <h1>{registering ? "Create your account" : "Welcome back"}</h1>
-        <p className="muted">{registering ? "Plan trips with an AI agent, together with your group." : "Sign in to your trips."}</p>
+        <p className="muted">{registering ? "Plan trips with an AI agent, together with your friends." : "Sign in to your trips."}</p>
 
         <form onSubmit={submit}>
           {registering && (
@@ -91,6 +92,7 @@ export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
           </button>
         </p>
       </div>
+      <SiteFooter />
     </main>
   );
 }

@@ -1,28 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  canEdit,
-  EXPORT_FORMATS,
-  formatDate,
-  type ExportFormat,
-  type GroupSummary,
-  type SessionUser,
-  type SharedTripSummary,
-} from "./client";
+import { canEdit, EXPORT_FORMATS, relativeTime, useMinuteTick, type ExportFormat, type SessionUser, type TripSummary } from "./client";
+import { SiteFooter } from "./SiteFooter";
 
-type TripSummary = GroupSummary["trips"][number];
+type SortOrder = "newest" | "oldest";
+const SORT_KEY = "planaway:trip-sort";
 
 interface Props {
   user: SessionUser;
-  groups: GroupSummary[];
-  /** Trips shared with the user through invite links, outside their groups. */
-  shared: SharedTripSummary[];
+  /** The user's own trips and the ones shared with them, newest activity first. */
+  trips: TripSummary[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  onNewTrip: (groupId: string) => void;
-  onNewGroup: () => void;
-  onManageGroup: (groupId: string) => void;
+  onNewTrip: () => void;
+  onRename: (tripId: string) => void;
   onSaveVersion: (tripId: string) => void;
   onExport: (tripId: string, format: ExportFormat) => void;
   onShare: (tripId: string) => void;
@@ -41,10 +33,27 @@ interface OpenMenu {
 }
 
 export function Sidebar(props: Props) {
-  const { user, groups, shared, activeId, onSelect, onNewTrip, onNewGroup, onManageGroup, onSignOut, onHide } = props;
-  const { onSaveVersion, onExport, onShare, onDelete, onLeave } = props;
+  const { user, trips, activeId, onSelect, onNewTrip, onSignOut, onHide } = props;
+  const { onRename, onSaveVersion, onExport, onShare, onDelete, onLeave } = props;
   const [menu, setMenu] = useState<OpenMenu | null>(null);
+  useMinuteTick();
+
+  // Remember the sort order across visits. Read after mount so the
+  // server-rendered markup matches the first client render.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(SORT_KEY) === "oldest") setSort("oldest");
+    } catch {}
+  }, []);
+
+  const changeSort = (value: SortOrder) => {
+    setSort(value);
+    try {
+      localStorage.setItem(SORT_KEY, value);
+    } catch {}
+  };
   const [exportOpen, setExportOpen] = useState(false);
+  const [sort, setSort] = useState<SortOrder>("newest");
   // Opened from the keyboard: move focus into the submenu.
   const keyboardOpen = useRef(false);
 
@@ -71,14 +80,16 @@ export function Sidebar(props: Props) {
     action();
   };
 
-  /** One trip row and its ⋯ menu. `editable`: the user can plan with the agent. */
-  const tripItem = (t: TripSummary, editable: boolean, meta: string, sharedWithMe = false) => {
+  /** One trip row and its ⋯ menu. */
+  const tripItem = (t: TripSummary) => {
     const open = menu?.tripId === t.id;
+    const owner = t.role === "owner";
+    const editable = canEdit(t.role);
     return (
       <li key={t.id} className={`trip-item ${t.id === activeId ? "active" : ""} ${open ? "menu-open" : ""}`}>
         <button className={`trip-open ${t.id === activeId ? "active" : ""}`} onClick={() => onSelect(t.id)}>
           <span className="t-title">{t.title}</span>
-          <span className="t-meta">{meta}</span>
+          <span className="t-meta">Updated {relativeTime(t.updatedAt)}</span>
         </button>
         <button
           className="icon-btn trip-more"
@@ -102,7 +113,12 @@ export function Sidebar(props: Props) {
             style={{ top: menu.top, left: menu.left }}
             onClick={(e) => e.stopPropagation()}
           >
-            {t.canShare && (
+            {editable && (
+              <button role="menuitem" onClick={() => run(() => onRename(t.id))}>
+                Rename…
+              </button>
+            )}
+            {owner && (
               <button role="menuitem" onClick={() => run(() => onShare(t.id))}>
                 Share…
               </button>
@@ -161,13 +177,12 @@ export function Sidebar(props: Props) {
                 </div>
               )}
             </div>
-            {(t.canDelete || sharedWithMe) && <hr className="menu-sep" />}
-            {t.canDelete && (
+            <hr className="menu-sep" />
+            {owner ? (
               <button role="menuitem" className="danger-text" onClick={() => run(() => onDelete(t.id))}>
                 Delete trip…
               </button>
-            )}
-            {sharedWithMe && (
+            ) : (
               <button role="menuitem" className="danger-text" onClick={() => run(() => onLeave(t.id))}>
                 Leave trip…
               </button>
@@ -178,7 +193,10 @@ export function Sidebar(props: Props) {
     );
   };
 
-  const meta = (t: TripSummary) => t.destinations.slice(0, 3).join(", ") || `Updated ${formatDate(t.updatedAt)}`;
+  const sign = sort === "newest" ? -1 : 1;
+  const sorted = [...trips].sort((a, b) => sign * (Date.parse(a.updatedAt) - Date.parse(b.updatedAt)));
+  const mine = sorted.filter((t) => t.role === "owner");
+  const shared = sorted.filter((t) => t.role !== "owner");
 
   return (
     <aside className="sidebar">
@@ -191,46 +209,30 @@ export function Sidebar(props: Props) {
           ✕
         </button>
       </div>
-      <button className="btn primary block" onClick={() => groups[0] && onNewTrip(groups[0].id)}>
+      <button className="btn primary block" onClick={onNewTrip}>
         + New trip
       </button>
 
-      <div className="groups">
-        {groups.map((g) => (
-          <section className="group" key={g.id}>
-            <div className="group-head">
-              <h2 className="side-heading">
-                {g.personal ? "Personal" : g.name}
-                {!g.personal && <span className="member-count"> · {g.memberCount}</span>}
-              </h2>
-              {!g.personal && canEdit(g.role) && (
-                <button className="icon-btn" title={`New trip in ${g.name}`} aria-label={`New trip in ${g.name}`} onClick={() => onNewTrip(g.id)}>
-                  +
-                </button>
-              )}
-              {!g.personal && (
-                <button className="icon-btn" title="Group members" aria-label={`Manage ${g.name}`} onClick={() => onManageGroup(g.id)}>
-                  ⚙
-                </button>
-              )}
-            </div>
-            <ul className="trip-list">
-              {g.trips.length === 0 && <li className="empty-list">No trips yet.</li>}
-              {g.trips.map((t) => tripItem(t, canEdit(g.role), meta(t)))}
-            </ul>
-          </section>
-        ))}
+      <div className="trip-sections">
+        <section>
+          <div className="section-head">
+            <h2 className="side-heading">Your trips</h2>
+            <select className="trip-sort" aria-label="Sort trips" value={sort} onChange={(e) => changeSort(e.target.value as SortOrder)}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </div>
+          <ul className="trip-list">
+            {mine.length === 0 && <li className="empty-list">No trips yet.</li>}
+            {mine.map(tripItem)}
+          </ul>
+        </section>
         {shared.length > 0 && (
-          <section className="group">
-            <div className="group-head">
-              <h2 className="side-heading">Shared with you</h2>
-            </div>
-            <ul className="trip-list">{shared.map((t) => tripItem(t, canEdit(t.role), `From ${t.sharedBy}`, true))}</ul>
+          <section>
+            <h2 className="side-heading">Shared with you</h2>
+            <ul className="trip-list">{shared.map(tripItem)}</ul>
           </section>
         )}
-        <button className="btn ghost block new-group" onClick={onNewGroup}>
-          + New group
-        </button>
       </div>
 
       <div className="user-footer">
@@ -246,6 +248,7 @@ export function Sidebar(props: Props) {
           Sign out
         </button>
       </div>
+      <SiteFooter compact />
     </aside>
   );
 }

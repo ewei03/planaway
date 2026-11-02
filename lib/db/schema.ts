@@ -1,7 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import {
   type AnyPgColumn,
-  boolean,
   index,
   integer,
   jsonb,
@@ -30,36 +29,16 @@ export const users = pgTable(
   (t) => [uniqueIndex("users_email_idx").on(t.email)],
 );
 
-/** owner: manage members and delete; editor: plan with the agent; viewer: read and comment. */
+/** owner: the trip's creator, who shares and deletes it; editor: plan with the agent; viewer: read and comment. */
 export const roleEnum = pgEnum("group_role", ["owner", "editor", "viewer"]);
 export type Role = (typeof roleEnum.enumValues)[number];
-
-export const groups = pgTable("groups", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  /** Each user gets one personal group at sign-up for trips they don't share. */
-  personal: boolean("personal").notNull().default(false),
-  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: createdAt(),
-});
-
-export const groupMembers = pgTable(
-  "group_members",
-  {
-    groupId: uuid("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
-    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    role: roleEnum("role").notNull(),
-    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index("group_members_user_idx").on(t.userId)],
-);
 
 export const trips = pgTable(
   "trips",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    groupId: uuid("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    /** The trip's owner: whoever created it. */
+    createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default("New trip"),
     itinerary: jsonb("itinerary").$type<Itinerary>(),
     destinations: text("destinations").array().notNull().default([]),
@@ -73,12 +52,12 @@ export const trips = pgTable(
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("trips_group_idx").on(t.groupId)],
+  (t) => [index("trips_created_by_idx").on(t.createdBy)],
 );
 
 /**
- * People one trip was shared with through an invite link. They see that trip
- * only, not the rest of its group. Role is editor or viewer, never owner.
+ * People a trip was shared with through an invite link. Role is editor or
+ * viewer, never owner: the owner is the trip's created_by.
  */
 export const tripMembers = pgTable(
   "trip_members",

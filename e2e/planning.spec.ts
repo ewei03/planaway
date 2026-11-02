@@ -21,7 +21,7 @@ test("plan a trip with the agent and see the itinerary", async ({ page }) => {
 
   // The trip takes the itinerary's title and shows up in the sidebar.
   await expect(page.getByRole("heading", { name: "Kyoto Food Weekend", level: 1 })).toBeVisible();
-  await expect(page.locator(".trip-list button.active")).toContainText("Kyoto, Nara");
+  await expect(page.locator(".trip-list button.active")).toContainText("Kyoto Food WeekendUpdated just now");
 
   // It's saved: a reload shows the same trip.
   await expect(page).toHaveURL(/\?trip=[0-9a-f-]{36}/);

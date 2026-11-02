@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent, TurnResult } from "@/lib/agent";
 import type { UserRef } from "@/lib/store";
 import { sampleItinerary } from "../fixtures";
-import { makeGroup, makeTrip, makeUser, setTrip } from "./helpers";
+import { makeTrip, makeUser, setTrip, shareTrip } from "./helpers";
 
 // Route handlers are called directly. Auth.js is replaced by a session for
 // whichever user `signIn` last chose; the agent's model calls are scripted.
@@ -14,12 +14,8 @@ vi.mock("@/lib/agent", async (importOriginal) => ({
 }));
 
 import * as register from "@/app/api/register/route";
-import * as groups from "@/app/api/groups/route";
-import * as group from "@/app/api/groups/[id]/route";
-import * as member from "@/app/api/groups/[id]/members/[userId]/route";
 import * as invite from "@/app/api/invites/[token]/route";
 import * as trips from "@/app/api/trips/route";
-import * as sharedTrips from "@/app/api/trips/shared/route";
 import * as trip from "@/app/api/trips/[id]/route";
 import * as tripInvites from "@/app/api/trips/[id]/invites/route";
 import * as tripInvite from "@/app/api/trips/[id]/invites/[token]/route";
@@ -41,12 +37,18 @@ const req = (method: string, path: string, json?: unknown) =>
   new Request(url(path), json === undefined ? { method } : { method, body: JSON.stringify(json), headers: { "content-type": "application/json" } });
 const params = <T extends Record<string, string>>(p: T) => ({ params: Promise.resolve(p) });
 
-let owner: UserRef, viewer: UserRef, outsider: UserRef, groupId: string;
+let owner: UserRef, viewer: UserRef, outsider: UserRef;
 
 beforeAll(async () => {
   [owner, viewer, outsider] = await Promise.all([makeUser("Owner"), makeUser("Viewer"), makeUser("Outsider")]);
-  groupId = await makeGroup(owner, [[viewer, "viewer"]]);
 });
+
+/** A trip owned by `owner` and shared with `viewer` as a viewer. */
+async function ownersTrip(itinerary: Parameters<typeof makeTrip>[1] = null) {
+  const id = await makeTrip(owner.id, itinerary);
+  await shareTrip(owner, id, viewer, "viewer");
+  return id;
+}
 
 beforeEach(() => {
   signIn(owner);
@@ -56,8 +58,8 @@ beforeEach(() => {
 
 describe("authentication", () => {
   it.each([
-    ["GET /api/groups", () => groups.GET()],
-    ["POST /api/trips", () => trips.POST(req("POST", "/api/trips", { groupId: "x" }))],
+    ["GET /api/trips", () => trips.GET()],
+    ["POST /api/trips", () => trips.POST()],
     ["GET /api/trips/:id", () => trip.GET(req("GET", "/api/trips/x"), params({ id: "x" }))],
     ["POST /api/trips/:id/messages", () => messages.POST(req("POST", "/x", { text: "hi" }), params({ id: "x" }))],
   ])("%s returns 401 when signed out", async (_name, call) => {
@@ -91,37 +93,9 @@ describe("POST /api/register", () => {
   });
 });
 
-describe("groups API", () => {
-  it("validates and creates groups", async () => {
-    expect((await groups.POST(req("POST", "/api/groups", { name: "   " }))).status).toBe(400);
-    const res = await groups.POST(req("POST", "/api/groups", { name: "Beach crew" }));
-    expect(res.status).toBe(201);
-    const { id } = await res.json();
-    const list = await (await groups.GET()).json();
-    expect(list.map((g: { id: string }) => g.id)).toContain(id);
-  });
-
-  it("caps group names at 80 characters", async () => {
-    const { id } = await (await groups.POST(req("POST", "/api/groups", { name: "x".repeat(200) }))).json();
-    const g = await (await group.GET(req("GET", "/"), params({ id }))).json();
-    expect(g.name).toHaveLength(80);
-  });
-
-  it("maps permission errors to 403 and non-members to 404", async () => {
-    signIn(viewer);
-    expect((await group.PATCH(req("PATCH", "/", { name: "Mine" }), params({ id: groupId }))).status).toBe(403);
-    signIn(outsider);
-    expect((await group.GET(req("GET", "/"), params({ id: groupId }))).status).toBe(404);
-  });
-
-  it("validates member roles", async () => {
-    expect((await member.PATCH(req("PATCH", "/", { role: "admin" }), params({ id: groupId, userId: viewer.id }))).status).toBe(400);
-  });
-});
-
 describe("trip sharing API", () => {
   it("validates invite roles and expiry", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     const create = (json: unknown) => tripInvites.POST(req("POST", "/", json), params({ id }));
     expect((await create({ role: "owner" })).status).toBe(400);
     expect((await create({ role: "viewer", expiresInDays: 365 })).status).toBe(400);
@@ -133,7 +107,7 @@ describe("trip sharing API", () => {
   });
 
   it("previews without signing in, and requires signing in to join", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await makeTrip(owner.id);
     const { token } = await (await tripInvites.POST(req("POST", "/", { role: "editor" }), params({ id }))).json();
 
     signIn(null);
@@ -145,8 +119,7 @@ describe("trip sharing API", () => {
     signIn(joiner);
     expect(await (await invite.POST(req("POST", "/"), params({ token }))).json()).toEqual({ tripId: id });
     expect((await trip.GET(req("GET", "/"), params({ id }))).status).toBe(200);
-    expect((await group.GET(req("GET", "/"), params({ id: groupId }))).status).toBe(404);
-    expect(await (await sharedTrips.GET()).json()).toMatchObject([{ id, role: "editor" }]);
+    expect(await (await trips.GET()).json()).toMatchObject([{ id, role: "editor", sharedBy: "Owner" }]);
 
     // Only the sharer sees and manages who has access.
     expect((await sharing.GET(req("GET", "/"), params({ id }))).status).toBe(403);
@@ -160,14 +133,11 @@ describe("trip sharing API", () => {
 });
 
 describe("trips API", () => {
-  it("creates trips and validates input", async () => {
-    expect((await trips.POST(req("POST", "/api/trips", {}))).status).toBe(400);
-    signIn(viewer);
-    expect((await trips.POST(req("POST", "/api/trips", { groupId }))).status).toBe(403);
-    signIn(owner);
-    const res = await trips.POST(req("POST", "/api/trips", { groupId }));
+  it("creates, lists, renames, and deletes trips", async () => {
+    const res = await trips.POST();
     expect(res.status).toBe(201);
     const { id } = await res.json();
+    expect(await (await trips.GET()).json()).toContainEqual(expect.objectContaining({ id, role: "owner", sharedBy: null }));
     expect((await trip.PATCH(req("PATCH", "/", { title: "" }), params({ id }))).status).toBe(400);
     expect((await trip.PATCH(req("PATCH", "/", { title: "Lisbon" }), params({ id }))).status).toBe(204);
     expect((await (await trip.GET(req("GET", "/"), params({ id }))).json()).title).toBe("Lisbon");
@@ -177,7 +147,7 @@ describe("trips API", () => {
   });
 
   it("saves versions", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     expect((await versions.POST(req("POST", "/", {}), params({ id }))).status).toBe(409);
     await setTrip(id, { itinerary: sampleItinerary() });
     const res = await versions.POST(req("POST", "/", { label: "Draft A" }), params({ id }));
@@ -189,7 +159,7 @@ describe("trips API", () => {
 describe("comments API", () => {
   let tripId: string;
   beforeAll(async () => {
-    tripId = await makeTrip(owner.id, groupId, sampleItinerary());
+    tripId = await ownersTrip(sampleItinerary());
   });
   const post = (b: unknown) => comments.POST(req("POST", "/", b), params({ id: tripId }));
 
@@ -225,7 +195,7 @@ describe("comments API", () => {
 describe("GET /api/trips/:id/export", () => {
   let tripId: string;
   beforeAll(async () => {
-    tripId = await makeTrip(owner.id, groupId, sampleItinerary());
+    tripId = await ownersTrip(sampleItinerary());
   });
   const get = (query: string, id = tripId) => exportRoute.GET(req("GET", `/api/trips/${id}/export${query}`), params({ id }));
 
@@ -251,7 +221,7 @@ describe("GET /api/trips/:id/export", () => {
   });
 
   it("returns 404 when there is nothing to export", async () => {
-    const empty = await makeTrip(owner.id, groupId);
+    const empty = await ownersTrip();
     expect((await get("?format=md", empty)).status).toBe(404);
     expect((await get("?format=md&version=00000000-0000-0000-0000-000000000000")).status).toBe(404);
   });
@@ -260,7 +230,7 @@ describe("GET /api/trips/:id/export", () => {
     const it = sampleItinerary();
     it.flights.forEach((f) => (f.date = null));
     it.days.forEach((d) => (d.date = null));
-    const undated = await makeTrip(owner.id, groupId, it);
+    const undated = await ownersTrip(it);
     const res = await get("?format=ics", undated);
     expect(res.status).toBe(422);
     expect((await res.json()).error).toMatch(/no dates/);
@@ -294,13 +264,13 @@ describe("POST /api/trips/:id/messages", () => {
   }
 
   it("requires text", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     expect((await send(id, "   ")).status).toBe(400);
     expect(runTurnMock).not.toHaveBeenCalled();
   });
 
   it("streams the turn, commits it, and releases the lock", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     scriptTurn(
       {
         reply: "Here's Kyoto",
@@ -335,7 +305,7 @@ describe("POST /api/trips/:id/messages", () => {
   });
 
   it("commits nothing when the turn fails, and still releases the lock", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     scriptTurn(null, [{ type: "error", message: "Rate limited" }]);
     const res = await send(id, "Plan Kyoto");
     expect(await events(res)).toEqual([{ type: "error", message: "Rate limited" }]);
@@ -346,14 +316,14 @@ describe("POST /api/trips/:id/messages", () => {
   });
 
   it("releases the lock when the agent throws", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     runTurnMock.mockRejectedValue(new Error("boom"));
     expect(await events(await send(id, "hi"))).toEqual([{ type: "error", message: "Failed to save this turn." }]);
     expect((await (await revision.GET(req("GET", "/"), params({ id }))).json()).busy).toBeNull();
   });
 
   it("returns 409 while someone else's turn is running", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     await setTrip(id, { turnStartedAt: new Date(), turnUserId: owner.id });
     const res = await send(id, "hi");
     expect(res.status).toBe(409);
@@ -361,13 +331,13 @@ describe("POST /api/trips/:id/messages", () => {
   });
 
   it("forbids viewers", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     signIn(viewer);
     expect((await send(id, "hi")).status).toBe(403);
   });
 
   it("caps message length at 8000 characters", async () => {
-    const id = await makeTrip(owner.id, groupId);
+    const id = await ownersTrip();
     scriptTurn({ reply: "ok" });
     await (await send(id, "x".repeat(10_000))).text();
     expect(runTurnMock.mock.calls[0][0].userContent).toContain(`[Owner] ${"x".repeat(8000)}`);

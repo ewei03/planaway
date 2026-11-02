@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb, schema as s } from "@/lib/db";
 import type { Itinerary } from "@/lib/itinerary";
-import { acceptTripInvite, createGroup, createTrip, createTripInvite, createUser, type InviteRole, type Role, type UserRef } from "@/lib/store";
+import { acceptTripInvite, createTrip, createTripInvite, createUser, type InviteRole, type UserRef } from "@/lib/store";
 
 let n = 0;
 
@@ -14,30 +14,14 @@ export async function makeUser(name = "User"): Promise<UserRef & { email: string
   return { ...user, email, password };
 }
 
-/** The id of the user's personal group. */
-export async function personalGroupId(userId: string): Promise<string> {
-  const db = await getDb();
-  const [g] = await db.select({ id: s.groups.id }).from(s.groups).where(eq(s.groups.createdBy, userId));
-  return g.id;
-}
-
-/** A shared group owned by `owner`, with the other users joined at the given roles. */
-export async function makeGroup(owner: UserRef, members: [UserRef, Exclude<Role, "owner">][] = [], name = "Crew") {
-  const { id } = await createGroup(owner.id, name);
-  // There are no group invite links; members are added directly.
-  const db = await getDb();
-  for (const [user, role] of members) await db.insert(s.groupMembers).values({ groupId: id, userId: user.id, role });
-  return id;
-}
-
 /** Shares one trip with `user` through an invite link, as `sharer`. */
 export async function shareTrip(sharer: UserRef, tripId: string, user: UserRef, role: InviteRole = "viewer") {
   const { token } = await createTripInvite(sharer.id, tripId, role, 7);
   await acceptTripInvite(user.id, token);
 }
 
-export async function makeTrip(userId: string, groupId: string, itinerary: Itinerary | null = null) {
-  const { id } = await createTrip(userId, groupId);
+export async function makeTrip(userId: string, itinerary: Itinerary | null = null) {
+  const { id } = await createTrip(userId);
   if (itinerary) await setTrip(id, { itinerary });
   return id;
 }

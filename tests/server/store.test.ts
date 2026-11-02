@@ -13,28 +13,21 @@ import {
   createTripInvite,
   createUser,
   deleteComment,
-  deleteGroup,
   deleteTrip,
-  getGroup,
   getInvitePreview,
   getItineraryForExport,
   getTripRevision,
   getTripSharing,
   getTripView,
-  listGroups,
-  listSharedTrips,
+  listTrips,
   loadTurnContext,
   releaseTurn,
-  removeMember,
   removeTripMember,
-  renameGroup,
   renameTrip,
   requireRole,
   revokeTripInvite,
   saveVersion,
-  setMemberRole,
   setTripMemberRole,
-  transferOwnership,
   setThreadResolved,
   tripAccess,
   verifyCredentials,
@@ -42,21 +35,23 @@ import {
   type UserRef,
 } from "@/lib/store";
 import { sampleItinerary } from "../fixtures";
-import { getTripRow, makeGroup, makeTrip, makeUser, personalGroupId, setTrip, shareTrip } from "./helpers";
+import { makeTrip, makeUser, setTrip, shareTrip } from "./helpers";
 
-// One cast of characters for the whole file; each test makes its own groups
-// and trips so tests don't depend on each other.
+// One cast of characters for the whole file; each test makes its own trips
+// so tests don't depend on each other.
 let owner: UserRef, editor: UserRef, viewer: UserRef, outsider: UserRef;
 
 beforeAll(async () => {
   [owner, editor, viewer, outsider] = await Promise.all([makeUser("Owner"), makeUser("Editor"), makeUser("Viewer"), makeUser("Outsider")]);
 });
 
-const crew = () =>
-  makeGroup(owner, [
-    [editor, "editor"],
-    [viewer, "viewer"],
-  ]);
+/** A trip owned by `owner` and shared with `editor` and `viewer` at those roles. */
+async function crewTrip(itinerary: Parameters<typeof makeTrip>[1] = null) {
+  const tripId = await makeTrip(owner.id, itinerary);
+  await shareTrip(owner, tripId, editor, "editor");
+  await shareTrip(owner, tripId, viewer, "viewer");
+  return tripId;
+}
 
 describe("requireRole", () => {
   it("allows equal or higher roles", () => {
@@ -70,11 +65,9 @@ describe("requireRole", () => {
 });
 
 describe("users", () => {
-  it("creates a personal group owned by the new user", async () => {
+  it("starts new users with no trips", async () => {
     const u = await makeUser("Solo");
-    const groups = await listGroups(u.id);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ name: "Personal", personal: true, role: "owner", memberCount: 1, trips: [] });
+    expect(await listTrips(u.id)).toEqual([]);
   });
 
   it("normalizes email and rejects duplicates case-insensitively", async () => {
@@ -99,62 +92,26 @@ describe("users", () => {
   });
 });
 
-describe("groups", () => {
-  it("lists the personal group first, with member counts and trips", async () => {
+describe("listing trips", () => {
+  it("lists the user's own trips and trips shared with them, most recently updated first", async () => {
     const u = await makeUser("Lister");
-    const shared = await makeGroup(u, [[outsider, "viewer"]], "Ski crew");
-    const tripId = await makeTrip(u.id, shared);
-    const groups = await listGroups(u.id);
-    expect(groups.map((g) => g.name)).toEqual(["Personal", "Ski crew"]);
-    expect(groups[1]).toMatchObject({ memberCount: 2, role: "owner", trips: [{ id: tripId, title: "New trip" }] });
-  });
-
-  it("says which listed trips have an itinerary and which the user can delete", async () => {
-    const g = await makeGroup(owner, [[editor, "editor"]]);
-    const mine = await makeTrip(editor.id, g, sampleItinerary());
-    const theirs = await makeTrip(owner.id, g);
-    const summary = async (userId: string, tripId: string) =>
-      (await listGroups(userId)).find((x) => x.id === g)!.trips.find((t) => t.id === tripId);
-
-    expect(await summary(editor.id, mine)).toMatchObject({ hasItinerary: true, canDelete: true });
-    expect(await summary(editor.id, theirs)).toMatchObject({ hasItinerary: false, canDelete: false });
-    expect(await summary(owner.id, mine)).toMatchObject({ canDelete: true });
-    expect(await summary(editor.id, mine)).not.toHaveProperty("createdBy");
-  });
-
-  it("hides groups from non-members as not found", async () => {
-    const g = await crew();
-    await expect(getGroup(outsider.id, g)).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  it("lets only owners rename and delete", async () => {
-    const g = await crew();
-    await expect(renameGroup(editor.id, g, "Mine now")).rejects.toBeInstanceOf(ForbiddenError);
-    await renameGroup(owner.id, g, "Renamed");
-    expect((await getGroup(owner.id, g)).name).toBe("Renamed");
-    await expect(deleteGroup(editor.id, g)).rejects.toBeInstanceOf(ForbiddenError);
-    await deleteGroup(owner.id, g);
-    await expect(getGroup(owner.id, g)).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  it("deleting a group deletes its trips", async () => {
-    const g = await crew();
-    const tripId = await makeTrip(owner.id, g);
-    await deleteGroup(owner.id, g);
-    expect(await getTripRow(tripId)).toBeUndefined();
-  });
-
-  it("protects the personal group", async () => {
-    const u = await makeUser("Personal");
-    const g = await personalGroupId(u.id);
-    await expect(deleteGroup(u.id, g)).rejects.toThrow("can't be deleted");
-    await expect(removeMember(u.id, g, u.id)).rejects.toThrow("can't leave your personal group");
+    const mine = await makeTrip(u.id, sampleItinerary());
+    const theirs = await makeTrip(owner.id);
+    await shareTrip(owner, theirs, u, "editor");
+    await makeTrip(owner.id); // not shared
+    expect(await listTrips(u.id)).toMatchObject([
+      { id: theirs, title: "New trip", role: "editor", sharedBy: "Owner", hasItinerary: false },
+      { id: mine, role: "owner", sharedBy: null, hasItinerary: true },
+    ]);
+    await renameTrip(u.id, mine, "Bumped");
+    expect((await listTrips(u.id)).map((t) => t.id)).toEqual([mine, theirs]);
+    expect((await listTrips(u.id))[0]).not.toHaveProperty("createdBy");
   });
 });
 
 describe("sharing one trip", () => {
   it("creates unguessable links with a chosen expiry, or none", async () => {
-    const tripId = await makeTrip(owner.id, await crew(), sampleItinerary());
+    const tripId = await makeTrip(owner.id, sampleItinerary());
     const a = await createTripInvite(owner.id, tripId, "editor", 7);
     const b = await createTripInvite(owner.id, tripId, "viewer", null);
     expect(a.token).not.toBe(b.token);
@@ -166,7 +123,7 @@ describe("sharing one trip", () => {
   });
 
   it("shows the trip's details before joining, without needing an account", async () => {
-    const tripId = await makeTrip(owner.id, await crew(), sampleItinerary());
+    const tripId = await crewTrip(sampleItinerary());
     const { token } = await createTripInvite(owner.id, tripId, "viewer", 7);
     expect(await getInvitePreview(token)).toMatchObject({
       tripId,
@@ -179,10 +136,9 @@ describe("sharing one trip", () => {
     });
   });
 
-  it("gives access to that one trip only, not the rest of the group", async () => {
-    const g = await crew();
-    const sharedTrip = await makeTrip(owner.id, g, sampleItinerary());
-    const otherTrip = await makeTrip(owner.id, g);
+  it("gives access to that one trip only, not the owner's other trips", async () => {
+    const sharedTrip = await makeTrip(owner.id, sampleItinerary());
+    const otherTrip = await makeTrip(owner.id);
     const guest = await makeUser("Guest");
     await expect(getTripView(guest.id, sharedTrip)).rejects.toBeInstanceOf(NotFoundError);
 
@@ -191,18 +147,14 @@ describe("sharing one trip", () => {
 
     expect(await getTripView(guest.id, sharedTrip)).toMatchObject({
       role: "viewer",
-      canShare: false,
-      canDelete: false,
       sharedBy: { id: owner.id, name: "Owner" },
     });
     await expect(getTripView(guest.id, otherTrip)).rejects.toBeInstanceOf(NotFoundError);
-    await expect(getGroup(guest.id, g)).rejects.toBeInstanceOf(NotFoundError);
-    expect((await listGroups(guest.id)).map((x) => x.name)).toEqual(["Personal"]);
-    expect(await listSharedTrips(guest.id)).toMatchObject([{ id: sharedTrip, role: "viewer", sharedBy: "Owner", hasItinerary: true }]);
+    expect(await listTrips(guest.id)).toMatchObject([{ id: sharedTrip, role: "viewer", sharedBy: "Owner", hasItinerary: true }]);
   });
 
   it("lets editors change the plan and viewers only view and comment", async () => {
-    const tripId = await makeTrip(owner.id, await makeGroup(owner), sampleItinerary());
+    const tripId = await makeTrip(owner.id, sampleItinerary());
     const [ed, vw] = await Promise.all([makeUser("SharedEditor"), makeUser("SharedViewer")]);
     await shareTrip(owner, tripId, ed, "editor");
     await shareTrip(owner, tripId, vw, "viewer");
@@ -223,26 +175,16 @@ describe("sharing one trip", () => {
     }
   });
 
-  it("lets a trip's creator or a group owner share it, but not other group members", async () => {
-    const g = await crew();
-    const ownersTrip = await makeTrip(owner.id, g);
-    const editorsTrip = await makeTrip(editor.id, g);
-    await expect(createTripInvite(editor.id, ownersTrip, "viewer", 7)).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(createTripInvite(viewer.id, ownersTrip, "viewer", 7)).rejects.toBeInstanceOf(ForbiddenError);
-    await createTripInvite(editor.id, editorsTrip, "viewer", 7);
-    await createTripInvite(owner.id, editorsTrip, "viewer", 7);
-    await expect(getTripSharing(viewer.id, ownersTrip)).rejects.toBeInstanceOf(ForbiddenError);
-  });
-
-  it("can share trips from a personal group", async () => {
-    const tripId = await makeTrip(owner.id, await personalGroupId(owner.id));
-    const friend = await makeUser("Friend");
-    await shareTrip(owner, tripId, friend, "editor");
-    expect((await getTripView(friend.id, tripId)).role).toBe("editor");
+  it("lets only the trip's owner share it", async () => {
+    const tripId = await crewTrip();
+    await expect(createTripInvite(editor.id, tripId, "viewer", 7)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(createTripInvite(viewer.id, tripId, "viewer", 7)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(getTripSharing(editor.id, tripId)).rejects.toBeInstanceOf(ForbiddenError);
+    await createTripInvite(owner.id, tripId, "viewer", 7);
   });
 
   it("rejects revoked and expired links", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await makeTrip(owner.id);
     const revoked = await createTripInvite(owner.id, tripId, "editor", 7);
     await revokeTripInvite(owner.id, tripId, revoked.token);
     await expect(getInvitePreview(revoked.token)).rejects.toBeInstanceOf(NotFoundError);
@@ -257,15 +199,15 @@ describe("sharing one trip", () => {
   });
 
   it("can't revoke another trip's link through your own trip", async () => {
-    const mine = await makeTrip(owner.id, await makeGroup(owner));
-    const theirs = await makeTrip(editor.id, await makeGroup(editor));
+    const mine = await makeTrip(owner.id);
+    const theirs = await makeTrip(editor.id);
     const { token } = await createTripInvite(editor.id, theirs, "viewer", 7);
     await revokeTripInvite(owner.id, mine, token);
     expect(await getInvitePreview(token)).toMatchObject({ tripId: theirs });
   });
 
   it("upgrades a viewer who opens an editor link, and never downgrades", async () => {
-    const tripId = await makeTrip(owner.id, await makeGroup(owner));
+    const tripId = await makeTrip(owner.id);
     const u = await makeUser("Upgrade");
     await shareTrip(owner, tripId, u, "viewer");
     await shareTrip(owner, tripId, u, "editor");
@@ -274,17 +216,16 @@ describe("sharing one trip", () => {
     expect((await getTripView(u.id, tripId)).role).toBe("editor");
   });
 
-  it("leaves group members' access alone when they open a link", async () => {
-    const g = await crew();
-    const tripId = await makeTrip(owner.id, g);
-    await shareTrip(owner, tripId, viewer, "editor");
-    expect((await getTripView(viewer.id, tripId)).role).toBe("viewer");
+  it("leaves the owner's access alone when they open their own link", async () => {
+    const tripId = await makeTrip(owner.id);
+    const { token } = await createTripInvite(owner.id, tripId, "viewer", 7);
+    await acceptTripInvite(owner.id, token);
+    expect((await getTripView(owner.id, tripId)).role).toBe("owner");
     expect((await getTripSharing(owner.id, tripId)).members).toEqual([]);
-    expect(await listSharedTrips(viewer.id)).toEqual([]);
   });
 
   it("lets the sharer change roles and remove people, and people leave", async () => {
-    const tripId = await makeTrip(owner.id, await makeGroup(owner));
+    const tripId = await makeTrip(owner.id);
     const a = await makeUser("A");
     const b = await makeUser("B");
     await shareTrip(owner, tripId, a);
@@ -299,89 +240,30 @@ describe("sharing one trip", () => {
     await removeTripMember(owner.id, tripId, a.id);
     await expect(getTripView(a.id, tripId)).rejects.toBeInstanceOf(NotFoundError);
     await removeTripMember(b.id, tripId, b.id);
-    expect(await listSharedTrips(b.id)).toEqual([]);
+    expect(await listTrips(b.id)).toEqual([]);
   });
 
   it("deleting the trip removes its links and shared access", async () => {
-    const tripId = await makeTrip(owner.id, await makeGroup(owner));
+    const tripId = await makeTrip(owner.id);
     const u = await makeUser("Gone");
     const { token } = await createTripInvite(owner.id, tripId, "viewer", null);
     await acceptTripInvite(u.id, token);
     await deleteTrip(owner.id, tripId);
-    expect(await listSharedTrips(u.id)).toEqual([]);
+    expect(await listTrips(u.id)).toEqual([]);
     await expect(getInvitePreview(token)).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
-describe("members", () => {
-  it("lets owners change roles", async () => {
-    const g = await crew();
-    await setMemberRole(owner.id, g, viewer.id, "editor");
-    expect((await getGroup(viewer.id, g)).role).toBe("editor");
-    await expect(setMemberRole(editor.id, g, viewer.id, "owner")).rejects.toBeInstanceOf(ForbiddenError);
-  });
-
-  it("never lets anyone change their own role, even with another owner", async () => {
-    const g = await crew();
-    await expect(setMemberRole(owner.id, g, owner.id, "editor")).rejects.toThrow("transfer ownership");
-    await setMemberRole(owner.id, g, editor.id, "owner");
-    await expect(setMemberRole(owner.id, g, owner.id, "viewer")).rejects.toThrow("transfer ownership");
-    expect((await getGroup(owner.id, g)).role).toBe("owner");
-  });
-
-  it("transfers ownership: the new owner takes over and the old one becomes an editor", async () => {
-    const g = await crew();
-    await transferOwnership(owner.id, g, viewer.id);
-    expect((await getGroup(viewer.id, g)).role).toBe("owner");
-    expect((await getGroup(owner.id, g)).role).toBe("editor");
-    // The former owner can't take it back on their own.
-    await expect(transferOwnership(owner.id, g, owner.id)).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(setMemberRole(owner.id, g, owner.id, "owner")).rejects.toBeInstanceOf(ForbiddenError);
-  });
-
-  it("only transfers to a member, from an owner, outside personal groups", async () => {
-    const g = await crew();
-    await expect(transferOwnership(editor.id, g, viewer.id)).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(transferOwnership(owner.id, g, outsider.id)).rejects.toBeInstanceOf(NotFoundError);
-    await expect(transferOwnership(owner.id, g, owner.id)).rejects.toBeInstanceOf(ConflictError);
-    const u = await makeUser("Solo2");
-    await expect(transferOwnership(u.id, await personalGroupId(u.id), outsider.id)).rejects.toThrow("can't be transferred");
-    expect((await getGroup(owner.id, g)).role).toBe("owner");
-  });
-
-  it("won't let the last owner leave", async () => {
-    const g = await crew();
-    await expect(removeMember(owner.id, g, owner.id)).rejects.toThrow("Transfer ownership");
-  });
-
-  it("lets anyone leave, but only owners remove others", async () => {
-    const g = await crew();
-    await expect(removeMember(editor.id, g, viewer.id)).rejects.toBeInstanceOf(ForbiddenError);
-    await removeMember(viewer.id, g, viewer.id);
-    await expect(getGroup(viewer.id, g)).rejects.toBeInstanceOf(NotFoundError);
-    await removeMember(owner.id, g, editor.id);
-    expect((await getGroup(owner.id, g)).members.map((m) => m.id)).toEqual([owner.id]);
-  });
-
-  it("treats non-members as not found", async () => {
-    const g = await crew();
-    await expect(setMemberRole(owner.id, g, outsider.id, "editor")).rejects.toBeInstanceOf(NotFoundError);
-  });
-});
-
 describe("trips", () => {
-  it("requires editor access to create a trip", async () => {
-    const g = await crew();
-    await expect(createTrip(viewer.id, g)).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(createTrip(outsider.id, g)).rejects.toBeInstanceOf(NotFoundError);
-    expect(await createTrip(editor.id, g)).toHaveProperty("id");
+  it("makes whoever creates a trip its owner", async () => {
+    const { id } = await createTrip(outsider.id);
+    expect(await getTripView(outsider.id, id)).toMatchObject({ role: "owner", sharedBy: null });
   });
 
-  it("returns a full view to members and not found to everyone else", async () => {
-    const g = await crew();
-    const tripId = await makeTrip(editor.id, g, sampleItinerary());
+  it("returns a full view to people it's shared with and not found to everyone else", async () => {
+    const tripId = await crewTrip(sampleItinerary());
     const view = await getTripView(viewer.id, tripId);
-    expect(view).toMatchObject({ id: tripId, groupId: g, groupName: "Crew", role: "viewer", canDelete: false, busy: null });
+    expect(view).toMatchObject({ id: tripId, role: "viewer", sharedBy: { id: owner.id, name: "Owner" }, busy: null });
     expect(view.itinerary).toEqual(sampleItinerary());
     await expect(getTripView(outsider.id, tripId)).rejects.toBeInstanceOf(NotFoundError);
   });
@@ -392,8 +274,7 @@ describe("trips", () => {
   });
 
   it("renaming requires editor and bumps the revision", async () => {
-    const g = await crew();
-    const tripId = await makeTrip(owner.id, g);
+    const tripId = await crewTrip();
     await expect(renameTrip(viewer.id, tripId, "Mine")).rejects.toBeInstanceOf(ForbiddenError);
     const before = (await getTripRevision(owner.id, tripId)).revision;
     await renameTrip(editor.id, tripId, "Spring break");
@@ -402,7 +283,7 @@ describe("trips", () => {
   });
 
   it("reports who else has a trip open, from recent polls", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([]);
     await getTripRevision(editor.id, tripId);
     // Never lists yourself.
@@ -416,25 +297,22 @@ describe("trips", () => {
   });
 
   it("counts someone running an agent turn as viewing, though their tab stops polling", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     await claimTurn(editor.id, tripId);
     expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([{ id: editor.id, name: "Editor" }]);
     await releaseTurn(tripId);
   });
 
-  it("lets the creator or an owner delete a trip", async () => {
-    const g = await crew();
-    const byOwner = await makeTrip(owner.id, g);
-    await expect(deleteTrip(editor.id, byOwner)).rejects.toBeInstanceOf(ForbiddenError);
-    const byEditor = await makeTrip(editor.id, g);
-    expect((await getTripView(editor.id, byEditor)).canDelete).toBe(true);
-    await deleteTrip(editor.id, byEditor);
-    await deleteTrip(owner.id, byOwner);
-    await expect(getTripView(owner.id, byOwner)).rejects.toBeInstanceOf(NotFoundError);
+  it("lets only the owner delete a trip", async () => {
+    const tripId = await crewTrip();
+    await expect(deleteTrip(editor.id, tripId)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(deleteTrip(viewer.id, tripId)).rejects.toBeInstanceOf(ForbiddenError);
+    await deleteTrip(owner.id, tripId);
+    await expect(getTripView(owner.id, tripId)).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("won't delete a trip while the agent is working on it", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     expect(await claimTurn(owner.id, tripId)).toBe(true);
     await expect(deleteTrip(owner.id, tripId)).rejects.toBeInstanceOf(ConflictError);
     await releaseTurn(tripId);
@@ -444,12 +322,12 @@ describe("trips", () => {
 
 describe("versions and export", () => {
   it("needs an itinerary to save", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     await expect(saveVersion(owner.id, tripId)).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("saves numbered snapshots, editors only", async () => {
-    const tripId = await makeTrip(owner.id, await crew(), sampleItinerary());
+    const tripId = await crewTrip(sampleItinerary());
     await expect(saveVersion(viewer.id, tripId)).rejects.toBeInstanceOf(ForbiddenError);
     expect((await saveVersion(editor.id, tripId)).label).toBe("Version 1");
     expect((await saveVersion(editor.id, tripId, "  Final  ")).label).toBe("Final");
@@ -458,7 +336,7 @@ describe("versions and export", () => {
   });
 
   it("snapshots don't change when the draft does", async () => {
-    const tripId = await makeTrip(owner.id, await crew(), sampleItinerary());
+    const tripId = await crewTrip(sampleItinerary());
     const v = await saveVersion(owner.id, tripId);
     await setTrip(tripId, { itinerary: { ...sampleItinerary(), title: "Changed" } });
     expect((await getItineraryForExport(owner.id, tripId, v.id))?.title).toBe("Kyoto Food Weekend");
@@ -466,9 +344,8 @@ describe("versions and export", () => {
   });
 
   it("won't export another trip's version", async () => {
-    const g = await crew();
-    const a = await makeTrip(owner.id, g, sampleItinerary());
-    const b = await makeTrip(owner.id, g, sampleItinerary());
+    const a = await makeTrip(owner.id, sampleItinerary());
+    const b = await makeTrip(owner.id, sampleItinerary());
     const v = await saveVersion(owner.id, a);
     expect(await getItineraryForExport(owner.id, b, v.id)).toBeNull();
     await expect(getItineraryForExport(outsider.id, a, v.id)).rejects.toBeInstanceOf(NotFoundError);
@@ -492,7 +369,7 @@ describe("agent turns", () => {
   });
 
   it("allows one turn at a time and shows who is busy", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     expect(await claimTurn(editor.id, tripId)).toBe(true);
     expect(await claimTurn(owner.id, tripId)).toBe(false);
     expect(await getTripRevision(viewer.id, tripId)).toMatchObject({ busy: { id: editor.id, name: "Editor" } });
@@ -503,19 +380,19 @@ describe("agent turns", () => {
   });
 
   it("viewers can't run turns", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     await expect(claimTurn(viewer.id, tripId)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("takes over a stale lock from a crashed process", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     await setTrip(tripId, { turnStartedAt: new Date(Date.now() - 16 * 60 * 1000), turnUserId: editor.id });
     expect((await getTripRevision(owner.id, tripId)).busy).toBeNull();
     expect(await claimTurn(owner.id, tripId)).toBe(true);
   });
 
   it("commits chat, transcript, and itinerary, and names the trip", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     await commitTurn(tripId, turn(owner.id));
     const view = await getTripView(viewer.id, tripId);
     expect(view.title).toBe("Kyoto Food Weekend");
@@ -524,19 +401,19 @@ describe("agent turns", () => {
       ["user", "Plan Kyoto", "Owner"],
       ["assistant", "Here you go", null],
     ]);
-    expect((await listGroups(owner.id)).flatMap((g) => g.trips).find((t) => t.id === tripId)?.destinations).toEqual(["Kyoto", "Nara"]);
+    expect((await listTrips(owner.id)).find((t) => t.id === tripId)?.destinations).toEqual(["Kyoto", "Nara"]);
     expect((await loadTurnContext(tripId)).history).toHaveLength(2);
   });
 
-  it("keeps a title the group chose", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+  it("keeps a title people chose", async () => {
+    const tripId = await crewTrip();
     await renameTrip(owner.id, tripId, "Our trip");
     await commitTurn(tripId, turn(owner.id));
     expect((await getTripView(owner.id, tripId)).title).toBe("Our trip");
   });
 
   it("appends transcript messages in order across turns", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     await commitTurn(tripId, turn(owner.id));
     await commitTurn(
       tripId,
@@ -553,7 +430,7 @@ describe("agent turns", () => {
   });
 
   it("rejects a commit that would overwrite transcript rows", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     await commitTurn(tripId, turn(owner.id));
     await expect(commitTurn(tripId, turn(owner.id, { reply: "dup" }))).rejects.toThrow();
     // The failed transaction left nothing behind.
@@ -561,7 +438,7 @@ describe("agent turns", () => {
   });
 
   it("shows the agent new comments on open threads only, once", async () => {
-    const tripId = await makeTrip(owner.id, await crew(), sampleItinerary());
+    const tripId = await crewTrip(sampleItinerary());
     await addComment(viewer.id, tripId, { targetType: "activity", targetId: "a1", targetLabel: "Day 1 · Nishiki Market", body: "Too pricey" });
     await addComment(editor.id, tripId, { targetType: "day", targetId: "d2", targetLabel: "Day 2", body: "Settled already" });
     const view = await getTripView(owner.id, tripId);
@@ -582,7 +459,7 @@ describe("agent turns", () => {
   });
 
   it("posts the agent's comment replies and resolves threads", async () => {
-    const tripId = await makeTrip(owner.id, await crew(), sampleItinerary());
+    const tripId = await crewTrip(sampleItinerary());
     await addComment(viewer.id, tripId, { targetType: "flight", targetId: "f1", targetLabel: "Flight SFO → KIX", body: "Cheaper?" });
     await addComment(viewer.id, tripId, { targetType: "trip", targetId: null, targetLabel: "Whole trip", body: "Love it" });
     const [flight, whole] = (await getTripView(owner.id, tripId)).comments;
@@ -613,14 +490,14 @@ describe("agent turns", () => {
 
 describe("comments", () => {
   async function thread(by: UserRef = viewer) {
-    const tripId = await makeTrip(owner.id, await crew(), sampleItinerary());
+    const tripId = await crewTrip(sampleItinerary());
     await addComment(by.id, tripId, { targetType: "day", targetId: "d1", targetLabel: "Day 1", body: "Too much walking" });
     const [root] = (await getTripView(owner.id, tripId)).comments;
     return { tripId, root };
   }
 
   it("lets viewers comment, and bumps the revision", async () => {
-    const tripId = await makeTrip(owner.id, await crew());
+    const tripId = await crewTrip();
     const before = (await getTripRevision(owner.id, tripId)).revision;
     await addComment(viewer.id, tripId, { targetType: "trip", targetId: "ignored", targetLabel: "Whole trip", body: "Yay" });
     const [c] = (await getTripView(owner.id, tripId)).comments;

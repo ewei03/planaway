@@ -45,3 +45,46 @@ test("drag the divider to resize the chat and itinerary, remembered across reloa
   await handle.dblclick();
   expect(Math.abs((await chat.boundingBox())!.width - before)).toBeLessThan(5);
 });
+
+test("rename a trip from its menu, and see when it was last updated", async ({ page }) => {
+  await register(page, account("Rename"));
+  await planTrip(page);
+
+  const sidebar = page.locator(".sidebar");
+  await expect(sidebar.getByText("Updated just now")).toBeVisible();
+  const title = (await page.locator(".chat .trip-title").textContent())!;
+  await sidebar.getByRole("button", { name: `Options for ${title}` }).click();
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
+  const name = page.getByLabel("Trip name");
+  await name.fill("Birthday trip");
+  await page.getByRole("button", { name: "Rename" }).click();
+
+  await expect(sidebar.getByRole("button", { name: /^Birthday trip/ })).toBeVisible();
+  await expect(page.locator(".chat .trip-title")).toHaveText("Birthday trip");
+  await expect(page.locator(".chat .trip-meta")).toHaveText("Updated just now");
+});
+
+test("hide the chat so the itinerary fills the width, remembered across reloads", async ({ page }) => {
+  await register(page, account("HideChat"));
+  await planTrip(page);
+
+  const composer = page.getByPlaceholder(/Refine the plan/);
+  const pane = page.locator(".itinerary-pane");
+  const before = (await pane.boundingBox())!.width;
+  await page.getByRole("button", { name: "Hide chat" }).click();
+  await expect(composer).toBeHidden();
+  expect((await pane.boundingBox())!.width).toBeGreaterThan(before + 200);
+  await page.screenshot({ path: "C:/Users/enoch/AppData/Local/Temp/claude/E--Users-Enoch-Documents-PlanAway/49d044a6-5bd3-4720-923d-752ba3e695e9/scratchpad/chat-hidden.png" });
+
+  // With the sidebar hidden too, both come back from the itinerary toolbar.
+  await page.getByRole("button", { name: "Hide trips" }).click();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Show chat" })).toBeVisible();
+  await expect(composer).toBeHidden();
+  await page.screenshot({ path: "C:/Users/enoch/AppData/Local/Temp/claude/E--Users-Enoch-Documents-PlanAway/49d044a6-5bd3-4720-923d-752ba3e695e9/scratchpad/both-hidden.png" });
+  await page.getByRole("button", { name: "Show trips" }).click();
+  await expect(page.getByRole("button", { name: "+ New trip" })).toBeVisible();
+  await page.getByRole("button", { name: "Show chat" }).click();
+  await expect(composer).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show chat" })).toBeHidden();
+});

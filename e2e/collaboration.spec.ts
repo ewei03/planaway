@@ -97,7 +97,7 @@ test("an invalid invite link explains itself", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Invite not valid" })).toBeVisible();
 });
 
-test("outsiders can't open a group's trip by URL", async ({ page, browser }) => {
+test("outsiders can't open someone else's trip by URL", async ({ page, browser }) => {
   await register(page, account("Owner"));
   await planTrip(page);
   const tripUrl = page.url();
