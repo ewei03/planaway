@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const REASONS: [title: string, subject: string, text: string][] = [
   ["Something isn't working", "Bug report", "Tell us what you did, what you expected, and what happened instead. A screenshot helps."],
-  ["Account help", "Account help", "Forgotten password, changing your email, or deleting your account. Write from the address on your account."],
+  ["Account help", "Account help", "Forgotten password or trouble signing in. Write from the address on your account."],
   ["Ideas and feedback", "Feedback", "What would make PlanAway better for your next trip?"],
   ["Privacy questions", "Privacy", "Questions about your data, or a request to see or delete it."],
 ];

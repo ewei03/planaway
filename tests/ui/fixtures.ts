@@ -28,6 +28,7 @@ export function commentView(overrides: Partial<CommentView> = {}): CommentView {
     id: `c${++n}`,
     parentId: null,
     author: sam,
+    byAgent: false,
     targetType: "activity",
     targetId: "a1",
     targetLabel: "Day 1 · Nishiki Market",

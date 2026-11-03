@@ -1,10 +1,13 @@
 "use client";
 
+import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { passwordProblem } from "@/lib/account";
 import { ACTIVITY_CATEGORIES } from "@/lib/itinerary";
 import {
   DEFAULT_ACTIVITY_COLORS,
+  LANGUAGES,
   PACES,
   THEMES,
   type ActivityCategory,
@@ -96,8 +99,10 @@ export function SettingsPage({ profile }: { profile: Profile }) {
         </Link>
         <h1>Settings</h1>
         <ProfileSection profile={profile} />
+        <PasswordSection />
         <AppearanceSection initial={profile.settings} save={save} />
         <DefaultsSection initial={profile.settings} save={save} />
+        <DeleteAccountSection />
       </div>
       <SiteFooter />
     </div>
@@ -107,9 +112,10 @@ export function SettingsPage({ profile }: { profile: Profile }) {
 // ---------- Profile ----------
 
 function ProfileSection({ profile }: { profile: Profile }) {
-  const [saved, setSaved] = useState({ name: profile.name, email: profile.email });
+  const [saved, setSaved] = useState({ name: profile.name, email: profile.email, birthDate: profile.birthDate ?? "" });
   const [name, setName] = useState(profile.name);
   const [email, setEmail] = useState(profile.email);
+  const [birthDate, setBirthDate] = useState(profile.birthDate ?? "");
   const [password, setPassword] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl);
   const [busy, setBusy] = useState(false);
@@ -117,7 +123,8 @@ function ProfileSection({ profile }: { profile: Profile }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const emailChanged = email.trim().toLowerCase() !== saved.email;
-  const dirty = name.trim() !== saved.name || emailChanged;
+  const birthDateChanged = birthDate !== saved.birthDate;
+  const dirty = name.trim() !== saved.name || emailChanged || birthDateChanged;
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -126,11 +133,12 @@ function ProfileSection({ profile }: { profile: Profile }) {
     try {
       const updated = await api<Profile>("/api/settings", {
         method: "PATCH",
-        body: JSON.stringify({ name, ...(emailChanged ? { email, password } : {}) }),
+        body: JSON.stringify({ name, ...(birthDateChanged ? { birthDate } : {}), ...(emailChanged ? { email, password } : {}) }),
       });
-      setSaved({ name: updated.name, email: updated.email });
+      setSaved({ name: updated.name, email: updated.email, birthDate: updated.birthDate ?? "" });
       setName(updated.name);
       setEmail(updated.email);
+      setBirthDate(updated.birthDate ?? "");
       setPassword("");
       setStatus({ kind: "ok", text: "Profile saved." });
     } catch (err) {
@@ -204,6 +212,16 @@ function ProfileSection({ profile }: { profile: Profile }) {
       <form onSubmit={save}>
         <label htmlFor="settings-name">Name</label>
         <input id="settings-name" autoComplete="name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+        <label htmlFor="settings-birth-date">Date of birth</label>
+        <input
+          id="settings-birth-date"
+          type="date"
+          autoComplete="bday"
+          // Required once set: it can be corrected, not removed.
+          required={Boolean(saved.birthDate)}
+          value={birthDate}
+          onChange={(e) => setBirthDate(e.target.value)}
+        />
         <label htmlFor="settings-email">Email</label>
         <input id="settings-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         {emailChanged && (
@@ -440,7 +458,23 @@ function DefaultsSection({ initial, save }: { initial: UserSettings; save: SaveS
               ))}
             </select>
           </div>
+          <div>
+            <label htmlFor="d-language">Plan language</label>
+            <select
+              id="d-language"
+              value={d.language ?? ""}
+              onChange={(e) => set("language", (e.target.value || null) as TripDefaults["language"])}
+            >
+              <option value="">Same as my request</option>
+              {LANGUAGES.map(([code, english, native]) => (
+                <option key={code} value={code} lang={code}>
+                  {native === english ? native : `${native} (${english})`}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+        <p className="muted small">Plan language sets what PlanAway writes itineraries and replies in. The app itself stays in English for now.</p>
         <div className="settings-actions">
           <StatusLine status={status} />
           <button className="btn primary" type="submit" disabled={busy}>
@@ -448,6 +482,141 @@ function DefaultsSection({ initial, save }: { initial: UserSettings; save: SaveS
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+// ---------- Password ----------
+
+function PasswordSection() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<Status>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setStatus(null);
+    const problem = next !== confirm ? "The new passwords don't match." : passwordProblem(next);
+    if (problem) return setStatus({ kind: "error", text: problem });
+    setBusy(true);
+    try {
+      await api("/api/settings/password", { method: "PUT", body: JSON.stringify({ current, next }) });
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setStatus({ kind: "ok", text: "Password changed." });
+    } catch (err) {
+      setStatus({ kind: "error", text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card settings-section" aria-labelledby="password-heading">
+      <h2 id="password-heading">Password</h2>
+      <form onSubmit={submit}>
+        <label htmlFor="current-password">Current password</label>
+        <input id="current-password" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
+        <div className="grid">
+          <div>
+            <label htmlFor="new-password">New password</label>
+            <input id="new-password" type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(e) => setNext(e.target.value)} />
+          </div>
+          <div>
+            <label htmlFor="confirm-password">Confirm new password</label>
+            <input
+              id="confirm-password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </div>
+        </div>
+        <p className="muted small">At least 8 characters.</p>
+        <div className="settings-actions">
+          <StatusLine status={status} />
+          <button className="btn primary" type="submit" disabled={busy || !current || !next || !confirm}>
+            Change password
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+// ---------- Delete account ----------
+
+function DeleteAccountSection() {
+  const [confirming, setConfirming] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<Status>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (confirming) passwordRef.current?.focus();
+  }, [confirming]);
+
+  const cancel = () => {
+    setConfirming(false);
+    setPassword("");
+    setStatus(null);
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setStatus(null);
+    try {
+      await api("/api/settings", { method: "DELETE", body: JSON.stringify({ password }) });
+      // The account is gone; end the session and say so on the sign-in page.
+      await signOut({ redirectTo: "/login?deleted=1" });
+    } catch (err) {
+      setStatus({ kind: "error", text: (err as Error).message });
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card settings-section danger-zone" aria-labelledby="delete-heading">
+      <h2 id="delete-heading">Delete account</h2>
+      <p className="muted small">
+        Permanently deletes your account, your profile, and every trip you own, including for the people you shared them with. This can&rsquo;t be undone.
+      </p>
+      {!confirming ? (
+        <div className="settings-actions">
+          <button type="button" className="btn danger-text" onClick={() => setConfirming(true)}>
+            Delete account…
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <label htmlFor="delete-password">Enter your password to confirm</label>
+          <input
+            id="delete-password"
+            ref={passwordRef}
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <div className="settings-actions">
+            <StatusLine status={status} />
+            <button type="button" className="btn" onClick={cancel} disabled={busy}>
+              Cancel
+            </button>
+            <button type="submit" className="btn danger-fill" disabled={busy || !password}>
+              {busy ? "Deleting…" : "Delete my account"}
+            </button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }

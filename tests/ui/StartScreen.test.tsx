@@ -61,7 +61,7 @@ describe("StartScreen", () => {
 
   it("Surprise me sits with I have an idea and starts from the saved defaults, not the other tab's form", async () => {
     const onStart = vi.fn(async () => {});
-    render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} defaults={{ currency: "EUR", origin: "Denver", travelMode: null, travelers: 2, pace: null }} />);
+    render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} defaults={{ currency: "EUR", origin: "Denver", travelMode: null, travelers: 2, pace: null, language: null }} />);
     await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));
     expect(screen.queryByRole("button", { name: "Surprise me!" })).toBeNull();
     await userEvent.clear(screen.getByLabelText("Leaving from"));
@@ -122,7 +122,7 @@ describe("StartScreen", () => {
       <StartScreen
         onStart={vi.fn(async () => {})}
         onOpenSidebar={vi.fn()}
-        defaults={{ currency: "EUR", origin: "Lisbon", travelMode: "train", travelers: 3, pace: "relaxed" }}
+        defaults={{ currency: "EUR", origin: "Lisbon", travelMode: "train", travelers: 3, pace: "relaxed", language: null }}
       />,
     );
     await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));

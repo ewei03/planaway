@@ -28,6 +28,7 @@ import * as messages from "@/app/api/trips/[id]/messages/route";
 import * as revision from "@/app/api/trips/[id]/revision/route";
 import * as versions from "@/app/api/trips/[id]/versions/route";
 import * as settings from "@/app/api/settings/route";
+import * as password from "@/app/api/settings/password/route";
 import * as preferences from "@/app/api/settings/preferences/route";
 import * as avatarUpload from "@/app/api/settings/avatar/route";
 import * as avatars from "@/app/api/avatars/[id]/route";
@@ -85,6 +86,35 @@ describe("settings API", () => {
     expect((await patch({ email: "new@example.com", password: "wrong one" })).status).toBe(403);
   });
 
+  it("deletes the account only with its password", async () => {
+    const u = await makeUser("Goner");
+    signIn(u);
+    expect((await settings.DELETE(req("DELETE", "/api/settings", {}))).status).toBe(400);
+    expect((await settings.DELETE(req("DELETE", "/api/settings", { password: "wrong one" }))).status).toBe(403);
+    expect((await settings.DELETE(req("DELETE", "/api/settings", { password: u.password }))).status).toBe(204);
+    expect((await settings.GET()).status).toBe(404);
+  });
+
+  it("changes the password", async () => {
+    const u = await makeUser("PasswordChanger");
+    signIn(u);
+    const put = (b: unknown) => password.PUT(req("PUT", "/api/settings/password", b));
+    expect((await put({ current: "nope", next: "a new password" })).status).toBe(403);
+    const weak = await put({ current: u.password, next: "short" });
+    expect(weak.status).toBe(400);
+    expect(await weak.json()).toEqual({ error: "Password must be at least 8 characters." });
+    expect((await put({ current: u.password, next: "a new password" })).status).toBe(204);
+  });
+
+  it("updates the date of birth, refusing one under 13", async () => {
+    const u = await makeUser("DOB");
+    signIn(u);
+    const patch = (b: unknown) => settings.PATCH(req("PATCH", "/api/settings", b));
+    expect(await (await patch({ birthDate: "1985-07-01" })).json()).toMatchObject({ birthDate: "1985-07-01" });
+    const young = await patch({ birthDate: `${new Date().getFullYear() - 5}-01-01` });
+    expect(young.status).toBe(400);
+  });
+
   it("renames and returns the fresh profile", async () => {
     const u = await makeUser("Renamer");
     signIn(u);
@@ -98,7 +128,7 @@ describe("settings API", () => {
     const good = {
       theme: "light",
       activityColors: { rest: "#00aa00" },
-      defaults: { currency: "GBP", origin: "Manchester", travelMode: "drive", travelers: 4, pace: "relaxed" },
+      defaults: { currency: "GBP", origin: "Manchester", travelMode: "drive", travelers: 4, pace: "relaxed", language: "fr" },
     };
     const res = await preferences.PUT(req("PUT", "/", good));
     expect(res.status).toBe(200);
@@ -127,12 +157,25 @@ describe("settings API", () => {
 describe("POST /api/register", () => {
   const post = (b: unknown) => register.POST(req("POST", "/api/register", b));
 
+  const ok = { name: "A", email: "a@b.co", password: "12345678", birthDate: "1990-04-12" };
+  const yearsAgo = (n: number, days = 0) => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - n);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+
   it.each([
-    [{ email: "a@b.co", password: "12345678" }, "Name is required."],
-    [{ name: "A", email: "not-an-email", password: "12345678" }, "Enter a valid email address."],
-    [{ name: "A", email: "a@b.co", password: "short" }, "Password must be at least 8 characters."],
-    [{ name: "A", email: "a@b.co", password: "é".repeat(40) }, "Password is too long (72 bytes max)."],
-    [{ name: "A", email: "a@b.co", password: 12345678 }, "Password must be at least 8 characters."],
+    [{ ...ok, name: undefined }, "Name is required."],
+    [{ ...ok, email: "not-an-email" }, "Enter a valid email address."],
+    [{ ...ok, password: "short" }, "Password must be at least 8 characters."],
+    [{ ...ok, password: "é".repeat(40) }, "Password is too long (72 bytes max)."],
+    [{ ...ok, password: 12345678 }, "Password must be at least 8 characters."],
+    [{ ...ok, birthDate: undefined }, "Enter your date of birth."],
+    [{ ...ok, birthDate: "2010-02-30" }, "Enter a valid date of birth."],
+    [{ ...ok, birthDate: "12/04/1990" }, "Enter a valid date of birth."],
+    [{ ...ok, birthDate: yearsAgo(-1) }, "Your date of birth can't be in the future."],
+    [{ ...ok, birthDate: yearsAgo(13, 3) }, "Sorry, you need to be at least 13 to use PlanAway."],
   ])("rejects %j", async (b, error) => {
     const res = await post(b);
     expect(res.status).toBe(400);
@@ -140,7 +183,7 @@ describe("POST /api/register", () => {
   });
 
   it("creates an account, then refuses the same email", async () => {
-    const b = { name: "New", email: `new-${Date.now()}@example.com`, password: "long enough" };
+    const b = { name: "New", email: `new-${Date.now()}@example.com`, password: "long enough", birthDate: yearsAgo(13, -1) };
     expect((await post(b)).status).toBe(201);
     const again = await post({ ...b, email: b.email.toUpperCase() });
     expect(again.status).toBe(409);

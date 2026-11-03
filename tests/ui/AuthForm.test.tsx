@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockFetch } from "./fixtures";
@@ -18,7 +18,12 @@ beforeEach(() => {
 });
 
 async function fill(fields: Record<string, string>) {
-  for (const [label, value] of Object.entries(fields)) await userEvent.type(screen.getByLabelText(label), value);
+  for (const [label, value] of Object.entries(fields)) {
+    const input = screen.getByLabelText(label);
+    // Date inputs take a whole value, not keystrokes.
+    if (input.getAttribute("type") === "date") fireEvent.change(input, { target: { value } });
+    else await userEvent.type(input, value);
+  }
 }
 
 describe("AuthForm", () => {
@@ -49,10 +54,15 @@ describe("AuthForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
     expect(screen.getByRole("heading", { name: "Create your account" })).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toHaveAttribute("minLength", "8");
-    await fill({ Name: "Maya", Email: "maya@example.com", Password: "secret123" });
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123" });
     await userEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect(fetch.mock.calls[0][0]).toBe("/api/register");
-    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ name: "Maya", email: "maya@example.com", password: "secret123" });
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({
+      name: "Maya",
+      email: "maya@example.com",
+      password: "secret123",
+      birthDate: "1990-04-12",
+    });
     expect(signInMock).toHaveBeenCalled();
     expect(assign).toHaveBeenCalledWith("/");
   });
@@ -61,7 +71,7 @@ describe("AuthForm", () => {
     mockFetch(() => Response.json({ error: "An account with that email already exists." }, { status: 409 }));
     render(<AuthForm callbackUrl="/" />);
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
-    await fill({ Name: "Maya", Email: "maya@example.com", Password: "secret123" });
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123" });
     await userEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect(screen.getByRole("alert")).toHaveTextContent("already exists");
     expect(signInMock).not.toHaveBeenCalled();

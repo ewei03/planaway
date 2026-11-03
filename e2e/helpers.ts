@@ -17,6 +17,7 @@ export async function register(page: Page, who: Account, { goto = true } = {}) {
   if (goto) await page.goto("/login");
   await page.getByRole("button", { name: "Create an account" }).click();
   await page.getByLabel("Name").fill(who.name);
+  await page.getByLabel("Date of birth").fill("1990-04-12");
   await page.getByLabel("Email").fill(who.email);
   await page.getByLabel("Password").fill(who.password);
   await page.getByRole("button", { name: "Create account" }).click();

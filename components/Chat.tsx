@@ -109,7 +109,7 @@ export function Chat({ trip, user, live, working, status, onSend, onRename, onOp
         )}
         {trip.chat.map((m) =>
           m.role === "user" ? (
-            <UserMessage key={m.id} text={m.text} author={m.author?.name ?? "Former member"} mine={m.author?.id === user.id} />
+            <UserMessage key={m.id} text={m.text} author={m.author?.name ?? "Deleted user"} mine={m.author?.id === user.id} />
           ) : (
             <AgentMessage key={m.id}>
               <Markdown text={m.text || "(no reply)"} />

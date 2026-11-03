@@ -42,10 +42,17 @@ describe("CommentsPanel", () => {
 
   it("groups replies under their thread and labels agent replies", () => {
     const root = commentView({ body: "Vegetarian options?" });
-    const reply = commentView({ parentId: root.id, author: null, body: "Added Shigetsu for lunch." });
+    const reply = commentView({ parentId: root.id, author: null, byAgent: true, body: "Added Shigetsu for lunch." });
     setup({ trip: tripView({ comments: [root, reply] }) });
     expect(screen.getAllByText(/Vegetarian|Shigetsu/)).toHaveLength(2);
     expect(screen.getByText("✨ PlanAway")).toHaveClass("agent");
+  });
+
+  it("shows comments from a deleted account as a deleted user's, not PlanAway's", () => {
+    const root = commentView({ author: null, byAgent: false, body: "Can we skip the museum?" });
+    setup({ trip: tripView({ comments: [root] }) });
+    expect(screen.getByText("Deleted user")).not.toHaveClass("agent");
+    expect(screen.queryByText("✨ PlanAway")).toBeNull();
   });
 
   it("flags threads whose item was removed from the plan", () => {

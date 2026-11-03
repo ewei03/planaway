@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import bcrypt from "bcryptjs";
 import { and, asc, count, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { birthDateProblem, passwordProblem } from "./account";
 import { getDb, schema as s, type Db } from "./db";
 import type { CommentTarget, Role } from "./db/schema";
 import type { Itinerary } from "./itinerary";
@@ -49,6 +50,8 @@ export interface Viewer extends UserRef {
 /** The signed-in user's own account, for the app and the settings page. */
 export interface Profile extends Viewer {
   email: string;
+  /** YYYY-MM-DD, or null for accounts made before it was asked. */
+  birthDate: string | null;
   settings: UserSettings;
 }
 
@@ -103,8 +106,10 @@ export interface SavedVersion {
 export interface CommentView {
   id: string;
   parentId: string | null;
-  /** null means the comment came from the PlanAway agent. */
+  /** null for PlanAway's comments, and for people who have deleted their account. */
   author: UserRef | null;
+  /** Written by PlanAway. */
+  byAgent: boolean;
   targetType: CommentTarget;
   targetId: string | null;
   targetLabel: string;
@@ -135,7 +140,8 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
 // ---------- Users ----------
 
-export async function createUser(name: string, email: string, password: string): Promise<UserRef> {
+/** The register route requires a valid birthDate; it's optional here for tests and older callers. */
+export async function createUser(name: string, email: string, password: string, birthDate: string | null = null): Promise<UserRef> {
   const db = await getDb();
   const normalized = email.trim().toLowerCase();
   const passwordHash = await bcrypt.hash(password, 12);
@@ -144,7 +150,7 @@ export async function createUser(name: string, email: string, password: string):
     if (existing.length) throw new ConflictError("An account with that email already exists.");
     const [user] = await tx
       .insert(s.users)
-      .values({ name: name.trim(), email: normalized, passwordHash })
+      .values({ name: name.trim(), email: normalized, passwordHash, birthDate })
       .returning({ id: s.users.id, name: s.users.name });
     return user;
   });
@@ -173,11 +179,43 @@ const avatarUrl = (userId: string, updatedAt: Date | null) => (updatedAt ? `/api
 export async function getProfile(userId: string): Promise<Profile> {
   const db = await getDb();
   const [u] = await db
-    .select({ id: s.users.id, name: s.users.name, email: s.users.email, avatarUpdatedAt: s.users.avatarUpdatedAt, settings: s.users.settings })
+    .select({
+      id: s.users.id,
+      name: s.users.name,
+      email: s.users.email,
+      birthDate: s.users.birthDate,
+      avatarUpdatedAt: s.users.avatarUpdatedAt,
+      settings: s.users.settings,
+    })
     .from(s.users)
     .where(eq(s.users.id, userId));
   if (!u) throw new NotFoundError("Account not found");
-  return { id: u.id, name: u.name, email: u.email, avatarUrl: avatarUrl(u.id, u.avatarUpdatedAt), settings: parseSettings(u.settings) };
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    birthDate: u.birthDate,
+    avatarUrl: avatarUrl(u.id, u.avatarUpdatedAt),
+    settings: parseSettings(u.settings),
+  };
+}
+
+export async function setBirthDate(userId: string, birthDate: string): Promise<void> {
+  const problem = birthDateProblem(birthDate);
+  if (problem) throw new InvalidInputError(problem);
+  const db = await getDb();
+  await db.update(s.users).set({ birthDate }).where(eq(s.users.id, userId));
+}
+
+/** Takes the current password, so a session left open somewhere can't lock the owner out. */
+export async function changePassword(userId: string, current: string, next: string): Promise<void> {
+  const problem = passwordProblem(next);
+  if (problem) throw new InvalidInputError(problem);
+  const db = await getDb();
+  const [u] = await db.select({ hash: s.users.passwordHash }).from(s.users).where(eq(s.users.id, userId));
+  if (!u) throw new NotFoundError("Account not found");
+  if (!(await bcrypt.compare(current, u.hash))) throw new ForbiddenError("Your current password isn't right.");
+  await db.update(s.users).set({ passwordHash: await bcrypt.hash(next, 12) }).where(eq(s.users.id, userId));
 }
 
 export async function renameUser(userId: string, name: string): Promise<void> {
@@ -281,6 +319,22 @@ async function runningTurn(db: Pick<Db, "select">, userId: string): Promise<{ id
 
 const stillPlanning = (title: string) =>
   `PlanAway is still working on “${title}”. You can start another request when it finishes.`;
+
+/**
+ * Deletes the account for good, after checking the password. Trips the user
+ * owns go with it, for everyone they were shared with. On other people's
+ * trips, their messages and comments stay, shown as from "Deleted user".
+ */
+export async function deleteAccount(userId: string, password: string): Promise<void> {
+  const db = await getDb();
+  const [u] = await db.select({ hash: s.users.passwordHash }).from(s.users).where(eq(s.users.id, userId));
+  if (!u) throw new NotFoundError("Account not found");
+  if (!(await bcrypt.compare(password, u.hash))) throw new ForbiddenError("That password isn't right.");
+  // Deleting a trip mid-turn would leave the agent writing to nothing.
+  const busy = await runningTurn(db, userId);
+  if (busy) throw new ConflictError(`PlanAway is still working on “${busy.title}”. Try again when it finishes.`);
+  await db.delete(s.users).where(eq(s.users.id, userId));
+}
 
 /** Refuses while the user's agent is busy on another trip, so a new trip isn't left empty. */
 export async function createTrip(userId: string): Promise<{ id: string }> {
@@ -659,6 +713,7 @@ export async function commitTurn(tripId: string, turn: TurnCommit): Promise<void
           tripId,
           parentId: root.id,
           authorId: null,
+          byAgent: true,
           targetType: root.targetType,
           targetId: root.targetId,
           targetLabel: root.targetLabel,
@@ -694,7 +749,8 @@ async function listComments(db: Db, tripId: string): Promise<CommentView[]> {
   return rows.map(({ c, authorName }) => ({
     id: c.id,
     parentId: c.parentId,
-    author: c.authorId ? { id: c.authorId, name: authorName ?? "Former member" } : null,
+    author: c.authorId ? { id: c.authorId, name: authorName ?? "Deleted user" } : null,
+    byAgent: c.byAgent,
     targetType: c.targetType,
     targetId: c.targetId,
     targetLabel: c.targetLabel,

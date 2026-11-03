@@ -10,6 +10,49 @@ export const THEMES = ["system", "light", "dark"] as const;
 export type Theme = (typeof THEMES)[number];
 
 export const TRAVEL_MODES = ["fly", "drive", "train", "any"] as const;
+
+/** Languages PlanAway can write plans in: [code, English name, name in the language]. */
+export const LANGUAGES = [
+  ["ar", "Arabic", "العربية"],
+  ["bn", "Bengali", "বাংলা"],
+  ["zh-Hans", "Chinese (Simplified)", "简体中文"],
+  ["zh-Hant", "Chinese (Traditional)", "繁體中文"],
+  ["cs", "Czech", "Čeština"],
+  ["da", "Danish", "Dansk"],
+  ["nl", "Dutch", "Nederlands"],
+  ["en", "English", "English"],
+  ["fi", "Finnish", "Suomi"],
+  ["fr", "French", "Français"],
+  ["de", "German", "Deutsch"],
+  ["el", "Greek", "Ελληνικά"],
+  ["he", "Hebrew", "עברית"],
+  ["hi", "Hindi", "हिन्दी"],
+  ["hu", "Hungarian", "Magyar"],
+  ["id", "Indonesian", "Bahasa Indonesia"],
+  ["it", "Italian", "Italiano"],
+  ["ja", "Japanese", "日本語"],
+  ["ko", "Korean", "한국어"],
+  ["ms", "Malay", "Bahasa Melayu"],
+  ["no", "Norwegian", "Norsk"],
+  ["fa", "Persian", "فارسی"],
+  ["pl", "Polish", "Polski"],
+  ["pt-BR", "Portuguese (Brazil)", "Português (Brasil)"],
+  ["pt-PT", "Portuguese (Portugal)", "Português (Portugal)"],
+  ["ro", "Romanian", "Română"],
+  ["ru", "Russian", "Русский"],
+  ["es", "Spanish", "Español"],
+  ["sw", "Swahili", "Kiswahili"],
+  ["sv", "Swedish", "Svenska"],
+  ["tl", "Tagalog", "Tagalog"],
+  ["th", "Thai", "ไทย"],
+  ["tr", "Turkish", "Türkçe"],
+  ["uk", "Ukrainian", "Українська"],
+  ["ur", "Urdu", "اردو"],
+  ["vi", "Vietnamese", "Tiếng Việt"],
+] as const;
+export type LanguageCode = (typeof LANGUAGES)[number][0];
+const LANGUAGE_CODES = LANGUAGES.map(([code]) => code) as [LanguageCode, ...LanguageCode[]];
+const languageName = (code: LanguageCode) => LANGUAGES.find(([c]) => c === code)![1];
 export const PACES = ["relaxed", "balanced", "packed"] as const;
 
 export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number];
@@ -50,6 +93,8 @@ export const TripDefaults = z.object({
   travelMode: z.enum(TRAVEL_MODES).nullable(),
   travelers: z.number().int().min(1).max(50).nullable(),
   pace: z.enum(PACES).nullable(),
+  /** What PlanAway writes plans and replies in; null to match the language of the request. */
+  language: z.enum(LANGUAGE_CODES).nullable(),
 });
 export type TripDefaults = z.infer<typeof TripDefaults>;
 
@@ -65,7 +110,7 @@ export type UserSettings = z.infer<typeof UserSettings>;
 export const DEFAULT_SETTINGS: UserSettings = {
   theme: "system",
   activityColors: {},
-  defaults: { currency: null, origin: null, travelMode: null, travelers: null, pace: null },
+  defaults: { currency: null, origin: null, travelMode: null, travelers: null, pace: null, language: null },
 };
 
 /** `value` if it fits `schema`, else `fallback`. */
@@ -94,6 +139,7 @@ export function parseSettings(raw: unknown): UserSettings {
       travelMode: valid(shape.travelMode, d.travelMode, null),
       travelers: valid(shape.travelers, d.travelers, null),
       pace: valid(shape.pace, d.pace, null),
+      language: valid(shape.language, d.language, null),
     },
   };
 }
@@ -117,5 +163,6 @@ export function describeDefaults(d: TripDefaults): string[] {
   if (d.travelers) lines.push(`Travelers: ${d.travelers}`);
   if (d.currency) lines.push(`Currency: ${d.currency}`);
   if (d.pace) lines.push(`Pace: ${d.pace}`);
+  if (d.language) lines.push(`Language: write the itinerary and your replies in ${languageName(d.language)}`);
   return lines;
 }

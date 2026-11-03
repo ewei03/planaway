@@ -1,6 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import {
   type AnyPgColumn,
+  boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -25,6 +27,8 @@ export const users = pgTable(
     email: text("email").notNull(),
     name: text("name").notNull(),
     passwordHash: text("password_hash").notNull(),
+    /** YYYY-MM-DD. Asked at sign-up to keep out under-13s; null for accounts made before that. */
+    birthDate: date("birth_date", { mode: "string" }),
     /** Profile photo as a data: URL, already shrunk by the browser. */
     avatar: text("avatar"),
     /** Changes with the photo, so its URL changes and caches refresh. */
@@ -157,7 +161,10 @@ export const comments = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tripId: uuid("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
+    /** Null for PlanAway's replies, and for people who have since deleted their account. */
     authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    /** Written by PlanAway, as opposed to a person whose account is gone. */
+    byAgent: boolean("by_agent").notNull().default(false),
     targetType: text("target_type", { enum: COMMENT_TARGETS }).notNull(),
     /** The itinerary item's id; null for comments on the whole trip. */
     targetId: text("target_id"),

@@ -12,6 +12,7 @@ import {
   createTrip,
   createTripInvite,
   createUser,
+  deleteAccount,
   deleteComment,
   deleteTrip,
   getInvitePreview,
@@ -23,6 +24,8 @@ import {
   getTripView,
   listTrips,
   changeEmail,
+  changePassword,
+  setBirthDate,
   renameUser,
   saveSettings,
   setAvatar,
@@ -131,12 +134,31 @@ describe("profile and settings", () => {
     expect(await verifyCredentials(fresh, u.password)).toMatchObject({ id: u.id });
   });
 
+  it("changes the password only with the current one, and only to a strong enough one", async () => {
+    const u = await makeUser("Rotator");
+    await expect(changePassword(u.id, "wrong password", "a new password")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(changePassword(u.id, u.password, "short")).rejects.toThrow("at least 8 characters");
+    await changePassword(u.id, u.password, "a new password");
+    expect(await verifyCredentials(u.email, u.password)).toBeNull();
+    expect(await verifyCredentials(u.email, "a new password")).toMatchObject({ id: u.id });
+  });
+
+  it("stores a date of birth, but never one under 13", async () => {
+    const u = await makeUser("Birthday");
+    expect((await getProfile(u.id)).birthDate).toBeNull();
+    await setBirthDate(u.id, "1990-04-12");
+    expect((await getProfile(u.id)).birthDate).toBe("1990-04-12");
+    const tooYoung = `${new Date().getFullYear() - 10}-01-01`;
+    await expect(setBirthDate(u.id, tooYoung)).rejects.toThrow("at least 13");
+    expect((await getProfile(u.id)).birthDate).toBe("1990-04-12");
+  });
+
   it("saves settings, cleaning anything stored badly", async () => {
     const u = await makeUser("Prefs");
     const saved = await saveSettings(u.id, {
       theme: "dark",
       activityColors: { food: "#123456" },
-      defaults: { currency: "EUR", origin: "Lisbon", travelMode: "train", travelers: 3, pace: "packed" },
+      defaults: { currency: "EUR", origin: "Lisbon", travelMode: "train", travelers: 3, pace: "packed", language: null },
     });
     expect(saved.theme).toBe("dark");
     expect((await getProfile(u.id)).settings).toEqual(saved);
@@ -590,12 +612,49 @@ describe("agent turns", () => {
     );
 
     const comments = (await getTripView(owner.id, tripId)).comments;
-    const agentReplies = comments.filter((c) => c.author === null);
+    const agentReplies = comments.filter((c) => c.byAgent);
     expect(agentReplies).toHaveLength(1);
+    expect(agentReplies[0].author).toBeNull();
     expect(agentReplies[0]).toMatchObject({ parentId: flight.id, body: "Switched to ZIPAIR", targetType: "flight", targetId: "f1" });
     expect(comments.find((c) => c.id === flight.id)?.resolvedAt).not.toBeNull();
     expect(comments.find((c) => c.id === whole.id)?.resolvedAt).toBeNull();
     expect(comments.find((c) => c.id === reply.id)?.resolvedAt).toBeNull();
+  });
+});
+
+describe("deleting an account", () => {
+  it("needs the right password", async () => {
+    const u = await makeUser("Careful");
+    await expect(deleteAccount(u.id, "wrong password")).rejects.toBeInstanceOf(ForbiddenError);
+    expect((await getProfile(u.id)).name).toBe("Careful");
+  });
+
+  it("removes the account and its own trips, but keeps its comments on other people's trips", async () => {
+    const leaving = await makeUser("Leaving");
+    const theirs = await makeTrip(leaving.id, sampleItinerary());
+    await shareTrip(leaving, theirs, owner, "editor");
+    const ownersTrip = await makeTrip(owner.id, sampleItinerary());
+    await shareTrip(owner, ownersTrip, leaving, "viewer");
+    await addComment(leaving.id, ownersTrip, { targetType: "trip", targetId: null, targetLabel: "Whole trip", body: "Count me in" });
+
+    await deleteAccount(leaving.id, leaving.password);
+
+    await expect(getProfile(leaving.id)).rejects.toBeInstanceOf(NotFoundError);
+    expect(await verifyCredentials(leaving.email, leaving.password)).toBeNull();
+    // Their trip is gone for the person it was shared with too.
+    await expect(getTripView(owner.id, theirs)).rejects.toBeInstanceOf(NotFoundError);
+    const [comment] = (await getTripView(owner.id, ownersTrip)).comments;
+    expect(comment).toMatchObject({ body: "Count me in", author: null, byAgent: false });
+  });
+
+  it("waits while PlanAway is working for them", async () => {
+    const u = await makeUser("Busy");
+    const tripId = await makeTrip(u.id);
+    await claimTurn(u.id, tripId);
+    await expect(deleteAccount(u.id, u.password)).rejects.toBeInstanceOf(ConflictError);
+    await releaseTurn(tripId);
+    await deleteAccount(u.id, u.password);
+    await expect(getProfile(u.id)).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

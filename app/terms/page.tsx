@@ -77,7 +77,7 @@ export default function Terms() {
       <section>
         <h2>Ending your account</h2>
         <p>
-          You can stop using PlanAway at any time, and ask us to delete your account by contacting us at <ContactLink />.
+          You can stop using PlanAway at any time, and delete your account from Settings. Questions about it? Contact us at <ContactLink />.
         </p>
       </section>
 

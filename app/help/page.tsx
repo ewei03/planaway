@@ -134,10 +134,18 @@ const SECTIONS: { id: string; title: string; questions: [question: string, answe
     title: "Your account",
     questions: [
       [
-        "How do I change my name, email, or photo?",
+        "How do I change my name, email, password, or photo?",
         <>
-          In <Link href="/settings">Settings</Link>. Changing your email asks for your current password. Settings also has light and dark mode, and
-          the colors for each kind of activity.
+          In <Link href="/settings">Settings</Link>. Changing your email or password asks for your current password. Settings also has light and
+          dark mode, and the colors for each kind of activity.
+        </>,
+      ],
+      [
+        "Can PlanAway plan in another language?",
+        <>
+          Yes. Write your request in any language and PlanAway answers in it, or choose a <b>Plan language</b> in{" "}
+          <Link href="/settings">Settings</Link> to have new trips written in that language. The app&rsquo;s own buttons and labels are in English
+          for now.
         </>,
       ],
       [
@@ -150,8 +158,9 @@ const SECTIONS: { id: string; title: string; questions: [question: string, answe
       [
         "How do I delete my account?",
         <>
-          <Link href="/contact">Contact us</Link> from the email address on your account. You can delete any trip you own at any time from its menu
-          in the sidebar.
+          At the bottom of <Link href="/settings">Settings</Link>, choose <b>Delete account…</b> and enter your password. This deletes every trip
+          you own, including for the people you shared them with, and it can&rsquo;t be undone. To delete a single trip instead, use its menu in
+          the sidebar.
         </>,
       ],
     ],

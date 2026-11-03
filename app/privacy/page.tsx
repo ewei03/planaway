@@ -17,12 +17,13 @@ export default function Privacy() {
         <h2>What we store</h2>
         <ul>
           <li>
-            <b>Your account:</b> your name, email address, and password. The password is stored only as a secure hash, so no one, including us, can
-            read it.
+            <b>Your account:</b> your name, email address, date of birth, and password. We ask your date of birth only to confirm you&rsquo;re
+            old enough to use PlanAway, and it isn&rsquo;t shown to anyone else. The password is stored only as a secure hash, so no one, including
+            us, can read it.
           </li>
           <li>
             <b>Your profile and settings:</b> your profile photo if you add one, your theme and activity colors, and the trip defaults you set
-            (starting point, travelers, currency, pace).
+            (starting point, travelers, currency, pace, plan language).
           </li>
           <li>
             <b>Your trips:</b> what you ask PlanAway, its replies, the itineraries and saved versions, comments, and the invite links you create.
@@ -68,8 +69,9 @@ export default function Privacy() {
         <h2>How long we keep it</h2>
         <p>
           We keep your account and trips until you delete them. Deleting a trip you own removes it, including its chat, comments, and versions, for
-          everyone on it. Leaving a trip someone shared with you removes you from it; your comments stay with the trip. Place lookups (names,
-          locations, and photos, not who asked) are cached for up to 30 days.
+          everyone on it. Leaving a trip someone shared with you removes you from it; your comments stay with the trip. Deleting your account
+          removes your profile, photo, settings, and every trip you own. Your messages and comments on other people&rsquo;s trips stay, without
+          your name or photo. Place lookups (names, locations, and photos, not who asked) are cached for up to 30 days.
         </p>
       </section>
 
@@ -78,15 +80,20 @@ export default function Privacy() {
         <ul>
           <li>Change your name, email, photo, and defaults at any time in Settings.</li>
           <li>Delete trips you own, or leave trips shared with you, from the sidebar.</li>
+          <li>Delete your account at any time from Settings.</li>
           <li>
-            To get a copy of your data or delete your account, contact us at <ContactLink /> from the email address on your account.
+            To get a copy of your data, contact us at <ContactLink /> from the email address on your account.
           </li>
         </ul>
       </section>
 
       <section>
         <h2>Children</h2>
-        <p>PlanAway isn&rsquo;t meant for children under 13, and we don&rsquo;t knowingly collect their information.</p>
+        <p>
+          PlanAway isn&rsquo;t meant for children under 13. We ask for a date of birth at sign-up and don&rsquo;t create an account for anyone
+          younger, and we don&rsquo;t knowingly collect their information. If you believe a child under 13 has an account, contact us at{" "}
+          <ContactLink /> and we&rsquo;ll delete it.
+        </p>
       </section>
 
       <section>

@@ -36,10 +36,24 @@ test("duplicate registration is refused", async ({ page }) => {
   await signOut(page);
   await page.getByRole("button", { name: "Create an account" }).click();
   await page.getByLabel("Name").fill("Lee again");
+  await page.getByLabel("Date of birth").fill("1990-04-12");
   await page.getByLabel("Email").fill(lee.email);
   await page.getByLabel("Password").fill(lee.password);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.locator(".form-error")).toContainText("already exists");
+});
+
+test("people under 13 can't sign up", async ({ page }) => {
+  const young = account("Young");
+  await page.goto("/login");
+  await page.getByRole("button", { name: "Create an account" }).click();
+  await page.getByLabel("Name").fill(young.name);
+  await page.getByLabel("Date of birth").fill(`${new Date().getFullYear() - 10}-06-01`);
+  await page.getByLabel("Email").fill(young.email);
+  await page.getByLabel("Password").fill(young.password);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.locator(".form-error")).toHaveText("Sorry, you need to be at least 13 to use PlanAway.");
+  await expect(page).toHaveURL(/\/login/);
 });
 
 test("the login page won't redirect off-site after sign-in", async ({ page }) => {

@@ -193,7 +193,7 @@ function ThreadView({ thread, trip, user, showTarget, removed, onFocus, onReply,
       {[root, ...thread.replies].map((c) => (
         <div className="comment" key={c.id}>
           <div className="comment-meta">
-            <span className={`comment-author ${c.author ? "" : "agent"}`}>{c.author?.name ?? "✨ PlanAway"}</span>
+            <span className={`comment-author ${c.byAgent ? "agent" : ""}`}>{c.byAgent ? "✨ PlanAway" : (c.author?.name ?? "Deleted user")}</span>
             <span className="muted">{timeAgo(c.createdAt)}</span>
             {(c.author?.id === user.id || trip.role === "owner") && (
               <button

@@ -36,3 +36,23 @@ test("change your name, theme, and trip defaults in settings", async ({ page }) 
   await expect(page.getByLabel("Leaving from")).toHaveValue("San Francisco International Airport (SFO), San Francisco, United States");
   await expect(page.getByLabel("Travelers")).toHaveValue("3");
 });
+
+test("delete your account from settings", async ({ page }) => {
+  const who = account("Leaver");
+  await register(page, who);
+  await page.goto("/settings");
+  await waitForHydration(page, "#settings-name");
+
+  await page.getByRole("button", { name: "Delete account…" }).click();
+  await page.getByLabel("Enter your password to confirm").fill(who.password);
+  await page.getByRole("button", { name: "Delete my account" }).click();
+
+  await expect(page).toHaveURL(/\/login\?deleted=1/);
+  await expect(page.getByText("Your account has been deleted.")).toBeVisible();
+
+  // The old details no longer sign in.
+  await page.getByLabel("Email").fill(who.email);
+  await page.getByLabel("Password").fill(who.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("Wrong email or password.")).toBeVisible();
+});

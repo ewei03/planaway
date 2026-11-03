@@ -2,16 +2,18 @@
 
 import { signIn } from "next-auth/react";
 import { useState, type FormEvent } from "react";
+import { today } from "@/lib/account";
 import { AuthArt } from "./AuthArt";
 import { api } from "./client";
 import { LogoIcon } from "./icons";
 import { SiteFooter } from "./SiteFooter";
 
-export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
+export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A message shown above the form, e.g. after deleting an account. */ notice?: string }) {
   const [mode, setMode] = useState<"signin" | "register">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -21,7 +23,7 @@ export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
     setBusy(true);
     try {
       if (mode === "register") {
-        await api("/api/register", { method: "POST", body: JSON.stringify({ name, email, password }) });
+        await api("/api/register", { method: "POST", body: JSON.stringify({ name, email, password, birthDate }) });
       }
       const res = await signIn("credentials", { email, password, redirect: false });
       if (!res || res.error) {
@@ -52,12 +54,28 @@ export function AuthForm({ callbackUrl }: { callbackUrl: string }) {
           </div>
           <h1>{registering ? "Create your account" : "Welcome back"}</h1>
           <p className="muted">{registering ? "Plan trips with an AI agent, together with your friends." : "Sign in to your trips."}</p>
+          {notice && (
+            <p className="auth-notice" role="status">
+              {notice}
+            </p>
+          )}
 
           <form onSubmit={submit}>
             {registering && (
               <>
                 <label htmlFor="name">Name</label>
                 <input id="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} />
+                {/* Only rendered after a click, so today() can't differ between server and browser. */}
+                <label htmlFor="birth-date">Date of birth</label>
+                <input
+                  id="birth-date"
+                  type="date"
+                  autoComplete="bday"
+                  required
+                  max={today()}
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                />
               </>
             )}
             <label htmlFor="email">Email</label>

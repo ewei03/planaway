@@ -12,11 +12,11 @@ describe("parseSettings", () => {
     const s = parseSettings({
       theme: "neon",
       activityColors: { food: "#ff0000", rest: "red", spaceship: "#00ff00" },
-      defaults: { currency: "eur", origin: "  SFO  ", travelMode: "boat", travelers: 0, pace: "relaxed" },
+      defaults: { currency: "eur", origin: "  SFO  ", travelMode: "boat", travelers: 0, pace: "relaxed", language: "klingon" },
     });
     expect(s.theme).toBe("system");
     expect(s.activityColors).toEqual({ food: "#ff0000" });
-    expect(s.defaults).toEqual({ currency: "EUR", origin: "SFO", travelMode: null, travelers: null, pace: "relaxed" });
+    expect(s.defaults).toEqual({ currency: "EUR", origin: "SFO", travelMode: null, travelers: null, pace: "relaxed", language: null });
   });
 });
 
@@ -36,11 +36,12 @@ describe("describeDefaults", () => {
   });
 
   it("lists what's set, folding the travel mode into the starting point", () => {
-    expect(describeDefaults({ currency: "USD", origin: "SFO", travelMode: "fly", travelers: 2, pace: "relaxed" })).toEqual([
+    expect(describeDefaults({ currency: "USD", origin: "SFO", travelMode: "fly", travelers: 2, pace: "relaxed", language: "ja" })).toEqual([
       "Starting point: SFO (usually flies)",
       "Travelers: 2",
       "Currency: USD",
       "Pace: relaxed",
+      "Language: write the itinerary and your replies in Japanese",
     ]);
     expect(describeDefaults({ ...none, travelMode: "drive" })).toEqual(["Getting there: usually drives"]);
   });
