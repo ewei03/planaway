@@ -180,7 +180,6 @@ const DayCard = memo(function DayCard({ day, currency, places, ...c }: DayCardPr
     <div className="day">
       <div className="day-head">
         <h4 className="day-heading">
-          <span className="day-dot" aria-hidden="true" />
           <span className="day-num">Day {day.day}:</span> {day.title}
         </h4>
         <span className="day-meta">{[day.location, formatDay(day.date)].filter(Boolean).join(" · ")}</span>

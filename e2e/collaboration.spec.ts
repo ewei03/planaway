@@ -18,7 +18,7 @@ async function shareOneTrip(page: Page) {
   await expect(dialog.getByRole("heading", { name: "Share “Spring in Kyoto”" })).toBeVisible();
   await dialog.getByLabel("Invite role").selectOption("viewer");
   await dialog.getByRole("button", { name: "Create link" }).click();
-  const link = await dialog.getByLabel("Invite link").inputValue();
+  const link = await dialog.getByRole("textbox", { name: "Invite link" }).inputValue();
   expect(link).toMatch(/\/invite\/[\w-]{32}$/);
   await dialog.getByRole("button", { name: "Close" }).click();
 

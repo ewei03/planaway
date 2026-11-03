@@ -48,25 +48,25 @@ describe("ShareDialog", () => {
     expect(await screen.findByText("Nobody has joined through a link yet.")).toBeInTheDocument();
   });
 
-  it("creates a link with the chosen role and expiry, and copies it", async () => {
+  it("creates a link with the chosen role, and copies it", async () => {
     const writeText = clipboard();
     const { fetch } = setup(sharing({ invites: [] }), {
       respond: (_url, init) => (init?.method === "POST" ? { token: "new-token", expiresAt: null } : undefined),
     });
     await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Invite role" }), "editor");
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Link expiry" }), "never");
     await userEvent.click(screen.getByRole("button", { name: "Create link" }));
     const call = fetch.mock.calls.find(([, init]) => init?.method === "POST")!;
     expect(call[0]).toBe(`/api/trips/${TRIP}/invites`);
-    expect(JSON.parse(call[1]!.body as string)).toEqual({ role: "editor", expiresInDays: null });
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ role: "editor", expiresInDays: 1 });
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(`${location.origin}/invite/new-token`));
   });
 
-  it("defaults to view-only links that expire in a week", async () => {
+  it("makes view-only links that expire in a day, with no expiry to choose", async () => {
     const { fetch } = setup(sharing({ invites: [] }), { respond: (_url, init) => (init?.method === "POST" ? { token: "t" } : undefined) });
     await userEvent.click(await screen.findByRole("button", { name: "Create link" }));
     const call = fetch.mock.calls.find(([, init]) => init?.method === "POST")!;
-    expect(JSON.parse(call[1]!.body as string)).toEqual({ role: "viewer", expiresInDays: 7 });
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ role: "viewer", expiresInDays: 1 });
+    expect(screen.queryByRole("combobox", { name: "Link expiry" })).toBeNull();
   });
 
   it("copies an existing link with the copy icon", async () => {
@@ -74,7 +74,8 @@ describe("ShareDialog", () => {
     setup(sharing());
     await userEvent.click(await screen.findByRole("button", { name: "Copy invite link" }));
     expect(writeText).toHaveBeenCalledWith(`${location.origin}/invite/tok123`);
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+    // The icon stays a copy icon; no checkmark swap.
+    expect(screen.getByRole("button", { name: "Copy invite link" })).toBeInTheDocument();
   });
 
   it("revokes links, changes roles, and removes people", async () => {

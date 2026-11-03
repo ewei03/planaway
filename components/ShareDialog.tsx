@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, formatDate, type TripSharing } from "./client";
 import { useDialogs } from "./Dialogs";
-import { CheckIcon, CopyIcon } from "./icons";
+import { CopyIcon } from "./icons";
 import { SharingSkeleton } from "./Skeleton";
 
 interface Props {
@@ -13,19 +13,13 @@ interface Props {
   onError: (message: string) => void;
 }
 
-const EXPIRY_OPTIONS: [string, number | null][] = [
-  ["Expires in 1 day", 1],
-  ["Expires in 7 days", 7],
-  ["Expires in 30 days", 30],
-  ["Never expires", null],
-];
+/** Invite links last a day: long enough to send, short enough that a forwarded link goes stale. */
+const INVITE_DAYS = 1;
 
 /** Invite links for one trip, and the people who joined through them. */
 export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
   const [sharing, setSharing] = useState<TripSharing | null>(null);
   const [role, setRole] = useState<"editor" | "viewer">("viewer");
-  const [expiry, setExpiry] = useState("7");
-  const [copied, setCopied] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const dialogs = useDialogs();
 
@@ -64,8 +58,6 @@ export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
   const copy = async (token: string) => {
     try {
       await navigator.clipboard.writeText(inviteUrl(token));
-      setCopied(token);
-      setTimeout(() => setCopied(null), 2000);
     } catch {
       onError("Couldn't copy. Select the link and copy it manually.");
     }
@@ -75,7 +67,7 @@ export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
     try {
       const { token } = await api<{ token: string }>(`/api/trips/${tripId}/invites`, {
         method: "POST",
-        body: JSON.stringify({ role, expiresInDays: expiry === "never" ? null : Number(expiry) }),
+        body: JSON.stringify({ role, expiresInDays: INVITE_DAYS }),
       });
       await load();
       copy(token);
@@ -103,13 +95,6 @@ export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
               <option value="viewer">Can view</option>
               <option value="editor">Can edit</option>
             </select>
-            <select className="invite-expiry" aria-label="Link expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
-              {EXPIRY_OPTIONS.map(([label, days]) => (
-                <option key={label} value={days === null ? "never" : String(days)}>
-                  {label}
-                </option>
-              ))}
-            </select>
             <button className="btn primary" onClick={createInvite}>
               Create link
             </button>
@@ -125,13 +110,8 @@ export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
                     value={inviteUrl(inv.token)}
                     onFocus={(e) => e.target.select()}
                   />
-                  <button
-                    className="icon-btn"
-                    aria-label={copied === inv.token ? "Copied" : "Copy invite link"}
-                    title={copied === inv.token ? "Copied" : "Copy"}
-                    onClick={() => copy(inv.token)}
-                  >
-                    {copied === inv.token ? <CheckIcon /> : <CopyIcon />}
+                  <button className="icon-btn" aria-label="Copy invite link" title="Copy" onClick={() => copy(inv.token)}>
+                    <CopyIcon />
                   </button>
                   <button
                     className="icon-btn danger-text"
@@ -146,7 +126,7 @@ export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
             </ul>
           )}
           <p className="muted small">
-            Anyone with the link can see this trip's details, then sign in to join. It gives access to this trip only.
+            Anyone with the link can see this trip's details, then sign in to join. It gives access to this trip only, and expires after 24 hours.
           </p>
 
           <h3 className="dialog-section">People with access</h3>

@@ -90,7 +90,7 @@ const SECTIONS: { id: string; title: string; questions: [question: string, answe
         "How do I share a trip?",
         <>
           In the sidebar, open the trip&rsquo;s menu and choose <b>Share…</b>, then create an invite link and send it. Anyone with a PlanAway account
-          who opens the link joins the trip. A link can expire after a day, a week, or a month, or never.
+          who opens the link joins the trip. Links expire after 24 hours, so create a fresh one if it runs out.
         </>,
       ],
       [
