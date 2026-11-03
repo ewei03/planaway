@@ -5,6 +5,7 @@ import { canEdit, EXPORT_FORMATS, relativeTime, useMinuteTick, type ExportFormat
 import { areaQuery } from "@/lib/route";
 import Link from "next/link";
 import { Avatar } from "./Avatar";
+import { TripListSkeleton } from "./Skeleton";
 import { CloseIcon, GearIcon, LogoIcon, PlusIcon } from "./icons";
 import { credit, type PlaceLookup } from "./places";
 import { SiteFooter } from "./SiteFooter";
@@ -16,6 +17,8 @@ interface Props {
   user: SessionUser;
   /** The user's own trips and the ones shared with them, newest activity first. */
   trips: TripSummary[];
+  /** True until the trips have loaded, so the list shows placeholders rather than "No trips yet." */
+  loading?: boolean;
   activeId: string | null;
   /** Place photos for trip thumbnails; trips without one show their initial. */
   lookup?: PlaceLookup;
@@ -40,7 +43,7 @@ interface OpenMenu {
 }
 
 export function Sidebar(props: Props) {
-  const { user, trips, activeId, lookup, onSelect, onNewTrip, onSignOut, onHide } = props;
+  const { user, trips, loading = false, activeId, lookup, onSelect, onNewTrip, onSignOut, onHide } = props;
   const { onRename, onSaveVersion, onExport, onShare, onDelete, onLeave } = props;
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   useMinuteTick();
@@ -233,10 +236,14 @@ export function Sidebar(props: Props) {
               <option value="oldest">Oldest first</option>
             </select>
           </div>
-          <ul className="trip-list">
-            {mine.length === 0 && <li className="empty-list">No trips yet.</li>}
-            {mine.map(tripItem)}
-          </ul>
+          {loading ? (
+            <TripListSkeleton />
+          ) : (
+            <ul className="trip-list">
+              {mine.length === 0 && <li className="empty-list">No trips yet.</li>}
+              {mine.map(tripItem)}
+            </ul>
+          )}
         </section>
         {shared.length > 0 && (
           <section>

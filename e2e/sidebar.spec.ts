@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { account, planTrip, register } from "./helpers";
+import { account, planTrip, register, waitForHydration } from "./helpers";
 
 test("collapse and restore the sidebar on desktop, remembered across reloads", async ({ page }) => {
   await register(page, account("Sidebar"));
@@ -86,4 +86,33 @@ test("hide the chat so the itinerary fills the width, remembered across reloads"
   await page.getByRole("button", { name: "Show chat" }).click();
   await expect(composer).toBeVisible();
   await expect(page.getByRole("button", { name: "Show chat" })).toBeHidden();
+});
+
+test("drag the sidebar wider or narrower, within limits, and it stays that way", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await register(page, account("Resizer"));
+  await waitForHydration(page, "#idea-text");
+  const sidebar = page.locator(".sidebar");
+  const handle = page.getByRole("separator", { name: "Resize sidebar" });
+  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(280);
+
+  const drag = async (toX: number) => {
+    const b = (await handle.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(toX, b.y + 200, { steps: 5 });
+    await page.mouse.up();
+  };
+  await drag(360);
+  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(360);
+  // Past the limit it stops at 420.
+  await drag(900);
+  expect(Math.round((await sidebar.boundingBox())!.width)).toBe(420);
+
+  await page.reload();
+  await waitForHydration(page, "#idea-text");
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(420);
+  // Double-click puts it back.
+  await handle.dblclick();
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(280);
 });

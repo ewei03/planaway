@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, formatDate, type TripSharing } from "./client";
 import { useDialogs } from "./Dialogs";
 import { CheckIcon, CopyIcon } from "./icons";
+import { SharingSkeleton } from "./Skeleton";
 
 interface Props {
   tripId: string;
@@ -93,7 +94,7 @@ export function ShareDialog({ tripId, tripTitle, onClose, onError }: Props) {
       </div>
 
       {!sharing ? (
-        <p className="muted">Loading…</p>
+        <SharingSkeleton />
       ) : (
         <div className="dialog-body">
           <h3 className="dialog-section">Invite link</h3>

@@ -1,40 +1,41 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_SPLIT, MIN_SPLIT, SplitHandle } from "@/components/SplitHandle";
+import { DEFAULT_SIDEBAR, MAX_CHAT, MAX_SIDEBAR, MIN_CHAT, MIN_SIDEBAR, SidebarHandle, SplitHandle } from "@/components/SplitHandle";
 
-function setup(split = 0.5) {
-  const onChange = vi.fn();
-  const onReset = vi.fn();
-  render(<SplitHandle split={split} onChange={onChange} onReset={onReset} />);
-  return { handle: screen.getByRole("separator", { name: "Resize chat and itinerary" }), onChange, onReset };
-}
+describe("SidebarHandle", () => {
+  it("resizes with the keyboard within its limits, and double-click resets it", () => {
+    const onChange = vi.fn();
+    const onReset = vi.fn();
+    render(<SidebarHandle width={DEFAULT_SIDEBAR} onChange={onChange} onReset={onReset} />);
+    const handle = screen.getByRole("separator", { name: "Resize sidebar" });
+    expect(handle).toHaveAttribute("aria-valuenow", String(DEFAULT_SIDEBAR));
 
-describe("SplitHandle", () => {
-  it("reports its position", () => {
-    expect(setup(0.44).handle).toHaveAttribute("aria-valuenow", "44");
-  });
-
-  it("resizes with the arrow keys, clamped to the limits", () => {
-    const { handle, onChange } = setup(0.5);
-    fireEvent.keyDown(handle, { key: "ArrowLeft" });
-    expect(onChange).toHaveBeenLastCalledWith(0.45);
     fireEvent.keyDown(handle, { key: "ArrowRight" });
-    expect(onChange).toHaveBeenLastCalledWith(0.55);
-    fireEvent.keyDown(handle, { key: "Home" });
-    expect(onChange).toHaveBeenLastCalledWith(MIN_SPLIT);
+    expect(onChange).toHaveBeenLastCalledWith(DEFAULT_SIDEBAR + 20);
     fireEvent.keyDown(handle, { key: "End" });
-    expect(onChange).toHaveBeenLastCalledWith(MAX_SPLIT);
-  });
-
-  it("never goes past the limits", () => {
-    const { handle, onChange } = setup(MAX_SPLIT);
-    fireEvent.keyDown(handle, { key: "ArrowRight" });
-    expect(onChange).toHaveBeenLastCalledWith(MAX_SPLIT);
-  });
-
-  it("resets on double-click", () => {
-    const { handle, onReset } = setup();
+    expect(onChange).toHaveBeenLastCalledWith(MAX_SIDEBAR);
+    fireEvent.keyDown(handle, { key: "Home" });
+    expect(onChange).toHaveBeenLastCalledWith(MIN_SIDEBAR);
     fireEvent.doubleClick(handle);
     expect(onReset).toHaveBeenCalled();
+  });
+
+  it("never goes past its limits", () => {
+    const onChange = vi.fn();
+    render(<SidebarHandle width={MAX_SIDEBAR} onChange={onChange} onReset={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
+    expect(onChange).toHaveBeenLastCalledWith(MAX_SIDEBAR);
+  });
+});
+
+describe("SplitHandle", () => {
+  it("keeps the chat between its limits", () => {
+    const onChange = vi.fn();
+    render(<SplitHandle width={MIN_CHAT} onChange={onChange} onReset={vi.fn()} />);
+    const handle = screen.getByRole("separator", { name: "Resize chat and itinerary" });
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(onChange).toHaveBeenLastCalledWith(MIN_CHAT);
+    fireEvent.keyDown(handle, { key: "End" });
+    expect(onChange).toHaveBeenLastCalledWith(MAX_CHAT);
   });
 });

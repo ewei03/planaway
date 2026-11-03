@@ -100,7 +100,21 @@ a { color: var(--accent); }
 .muted { color: var(--muted); }
 
 /* Layout */
-.app { display: grid; grid-template-columns: 260px 1fr; height: 100vh; }
+/* The sidebar's chosen width, but never more than a third of the window, so the chat and itinerary keep room. */
+.app { --sidebar-col: min(var(--sidebar-w, 280px), 32vw); display: grid; grid-template-columns: var(--sidebar-col) 1fr; height: 100vh; position: relative; }
+/* Drag the sidebar's right edge to resize it (220–420px); it sits over the border, out of the grid. */
+.sidebar-handle {
+  position: absolute; top: 0; bottom: 0; left: calc(var(--sidebar-col) - 4px); width: 8px; z-index: 5;
+  cursor: col-resize; touch-action: none;
+}
+.sidebar-handle::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; transform: translateX(-50%);
+  background: transparent; transition: background 0.15s;
+}
+.sidebar-handle:hover::after, .sidebar-handle.dragging::after, .sidebar-handle:focus-visible::after { background: var(--accent); }
+.sidebar-handle:focus-visible { outline: none; }
+/* While dragging, iframes and text underneath shouldn't catch the pointer. */
+.sidebar-handle.dragging ~ * { pointer-events: none; user-select: none; }
 .main { min-width: 0; height: 100vh; overflow: hidden; }
 
 .sidebar {
@@ -263,7 +277,8 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 /* Workspace */
 .workspace {
   display: grid; height: 100%;
-  grid-template-columns: minmax(340px, var(--chat-fr, 0.44fr)) 7px minmax(380px, var(--pane-fr, 0.56fr));
+  /* The chat's chosen width (320–640px), but always leaving the itinerary at least 380px. */
+  grid-template-columns: clamp(320px, var(--chat-w, 440px), calc(100% - 387px)) 7px minmax(380px, 1fr);
 }
 .chat { display: flex; flex-direction: column; min-width: 0; height: 100vh; }
 /* The divider between chat and itinerary: a 1px line with a wider grab area. */
@@ -329,10 +344,20 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .toolbar-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
 /* Which version is on screen: a soft pill, coral while viewing a saved version. */
 .itinerary-pane { container: pane / inline-size; }
+/* The version picker and Save version, joined into one pill. */
+.version-group { display: inline-flex; align-items: stretch; flex: 0 1 330px; min-width: 190px; height: 40px; }
 .version-picker {
-  position: relative; display: inline-flex; align-items: center; gap: 8px; flex: 0 1 260px; min-width: 150px; height: 40px;
+  position: relative; display: inline-flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; height: 40px;
   margin: 0; padding: 0 12px; border-radius: 999px; background: var(--bg); color: var(--accent); font-size: 14px; cursor: pointer;
 }
+.version-group:has(.version-save) .version-picker { border-radius: 999px 0 0 999px; }
+.version-save {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px 0 12px; border: 0; border-left: 1px solid var(--border);
+  border-radius: 0 999px 999px 0; background: var(--bg); color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.version-save:hover:not(:disabled) { background: var(--accent-soft); }
+.version-save:disabled { color: var(--muted); opacity: 0.5; cursor: not-allowed; }
+.version-save:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .version-picker select {
   appearance: none; flex: 1; min-width: 0; width: auto; height: 100%; padding: 0; border: 0; background: transparent;
   font-weight: 600; color: var(--text); cursor: pointer; text-overflow: ellipsis;
@@ -354,6 +379,10 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 @container pane (max-width: 680px) {
   .comments-btn .btn-label, .btn.soft .btn-label { display: none; }
 }
+/* Then Export; Share keeps its word longest. */
+@container pane (max-width: 760px) {
+  .toolbar-actions .menu > .btn .btn-label { display: none; }
+}
 /* Who has the trip open, you first: overlapping initials, each ringed in the toolbar color. */
 .viewers { display: flex; align-items: center; flex: none; }
 .viewer {
@@ -368,6 +397,14 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .viewer + .viewer.more { margin-left: 3px; }
 /* Fewer circles as the pane narrows; only the matching +N shows (see Viewers.tsx). */
 .viewer.more-narrow, .viewer.more-phone { display: none; }
+/* An empty, dashed seat after the faces: invite someone. */
+.invite-circle {
+  width: 34px; height: 34px; margin-left: 6px; border-radius: 50%; flex: none; display: inline-grid; place-items: center;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--border)); background: transparent; color: var(--accent); cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.invite-circle:hover { background: var(--accent-soft); border-style: solid; border-color: var(--accent); }
+.invite-circle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @container pane (max-width: 600px) {
   .viewer.hide-narrow, .viewer.more-wide { display: none; }
   .viewer.more-narrow { display: inline-grid; }
@@ -375,7 +412,7 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 @container pane (max-width: 440px) {
   .viewer.hide-phone, .viewer.more-narrow { display: none; }
   .viewer.more-phone { display: inline-grid; }
-  .version-picker { min-width: 0; flex: 1 1 auto; }
+  .version-group { min-width: 0; flex: 1 1 auto; }
   .version-picker > svg:first-child { display: none; }
   /* Export keeps its download icon; the dropdown arrow goes to make room. */
   .toolbar-actions .menu > .btn > svg:last-child { display: none; }
@@ -912,6 +949,7 @@ a.btn.block { display: block; }
 }
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; }
+  .sidebar-handle { display: none; }
   .sidebar { position: fixed; inset: 0 auto 0 0; width: 280px; z-index: 30; transform: translateX(-100%); transition: transform 0.2s; box-shadow: 0 0 40px rgba(0,0,0,0.3); }
   .app.sidebar-open .sidebar { transform: none; }
   .open-sidebar { display: inline-flex; }
@@ -1015,3 +1053,34 @@ a.btn.block { display: block; }
   .auth-card form > :nth-child(n + 7) { animation-delay: 320ms; }
   .auth-pitch { animation: fade-up 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s backwards; }
 }
+
+/* ---------- Skeleton screens ----------
+   Grey shapes in the layout of what's loading, with a slow sheen moving across. */
+@keyframes skel-sheen { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.skel {
+  display: block; flex: none; max-width: 100%; border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 30%, color-mix(in srgb, var(--surface-2) 45%, var(--surface)) 50%, var(--surface-2) 70%);
+  background-size: 200% 100%; animation: skel-sheen 1.6s ease-in-out infinite;
+}
+.skel.round { border-radius: 50%; }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+.skeleton { display: flex; flex-direction: column; gap: 10px; }
+
+.trip-list-skeleton { gap: 6px; padding: 2px 0; }
+.skel-trip { display: flex; align-items: center; gap: 10px; padding: 8px; }
+.skel-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+
+.itinerary-skeleton { gap: 16px; }
+.skel-card { display: flex; flex-direction: column; gap: 12px; margin: -48px 20px 0; padding: 22px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.skel-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 6px; }
+.skel-caption { margin: 0; text-align: center; }
+.skel-box { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
+
+.trip-skeleton .chat-skeleton { gap: 0; height: 100vh; background: var(--surface-3); }
+.skel-chat-head { padding: 18px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.skel-messages { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.trip-skeleton .split-handle { cursor: default; }
+
+.sharing-skeleton { gap: 12px; }
+.skel-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.skel-section { display: flex; flex-direction: column; gap: 16px; }

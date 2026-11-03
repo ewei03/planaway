@@ -17,7 +17,8 @@ import { CommentsPanel } from "./CommentsPanel";
 import { ItineraryView } from "./ItineraryView";
 import { usePlaces } from "./places";
 import { TripMap } from "./TripMap";
-import { BookmarkIcon, ChevronDownIcon, CommentIcon, DownloadIcon, HistoryIcon, LogoIcon, MenuIcon } from "./icons";
+import { BookmarkIcon, ChevronDownIcon, CommentIcon, DownloadIcon, HistoryIcon, LogoIcon, MenuIcon, PlusIcon, UserPlusIcon } from "./icons";
+import { ItinerarySkeleton } from "./Skeleton";
 import { Viewers } from "./Viewers";
 
 interface Props {
@@ -33,6 +34,8 @@ interface Props {
   /** Exports the version on screen. */
   onExport: (format: ExportFormat) => void;
   onBack: () => void;
+  /** Opens the Share dialog; passed only to the trip's owner, who is the one who can invite. */
+  onShare?: () => void;
   /** The chat is collapsed: offer to bring it back (wide screens only). */
   chatHidden?: boolean;
   onShowChat?: () => void;
@@ -44,7 +47,7 @@ interface Props {
 
 export function ItineraryPane(props: Props) {
   const { trip, user, viewing, viewers = [], working, onView, onSaveVersion, onExport, onBack, onChanged, onError } = props;
-  const { chatHidden = false, onShowChat, onShowTrips } = props;
+  const { chatHidden = false, onShowChat, onShowTrips, onShare } = props;
   const [exportOpen, setExportOpen] = useState(false);
   // undefined: panel closed; null: all comments; otherwise one item's threads.
   const [commentAnchor, setCommentAnchor] = useState<CommentAnchor | null | undefined>(undefined);
@@ -95,19 +98,40 @@ export function ItineraryPane(props: Props) {
             <LogoIcon size={16} /> Chat
           </button>
         )}
-        <label className={`version-picker ${viewing !== "current" ? "saved" : ""}`}>
-          <HistoryIcon size={16} />
-          <select aria-label="Itinerary version" value={viewing} onChange={(e) => onView(e.target.value)}>
-            <option value="current">Current draft</option>
-            {[...trip.versions].reverse().map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.label} · {formatDateTime(v.savedAt)}
-              </option>
-            ))}
-          </select>
-          <ChevronDownIcon size={14} />
-        </label>
+        {/* Versions in one control: pick one, or save the draft as a new one. */}
+        <div className="version-group">
+          <label className={`version-picker ${viewing !== "current" ? "saved" : ""}`}>
+            <HistoryIcon size={16} />
+            <select aria-label="Itinerary version" value={viewing} onChange={(e) => onView(e.target.value)}>
+              <option value="current">Current draft</option>
+              {[...trip.versions].reverse().map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label} · {formatDateTime(v.savedAt)}
+                </option>
+              ))}
+            </select>
+            <ChevronDownIcon size={14} />
+          </label>
+          {canEdit(trip.role) && (
+            <button
+              className="version-save"
+              aria-label="Save version"
+              title={viewing === "current" ? "Save the current draft as a version" : "Switch to the current draft to save it"}
+              disabled={!trip.itinerary || viewing !== "current"}
+              onClick={onSaveVersion}
+            >
+              <BookmarkIcon size={16} />
+              <span className="btn-label">Save</span>
+            </button>
+          )}
+        </div>
         <Viewers me={user} viewers={viewers} />
+        {onShare && (
+          // An empty seat beside the faces: the plainest hint that others can join.
+          <button className="invite-circle" aria-label="Invite people" title="Invite people to this trip" onClick={onShare}>
+            <PlusIcon size={16} />
+          </button>
+        )}
         <div className="toolbar-actions">
           <button
             className={`btn comments-btn ${commentAnchor !== undefined ? "pressed" : ""}`}
@@ -122,21 +146,9 @@ export function ItineraryPane(props: Props) {
               </span>
             )}
           </button>
-          {canEdit(trip.role) && (
-            <button
-              className="btn soft"
-              aria-label="Save version"
-              title={viewing === "current" ? "Save a snapshot of the current draft" : "Switch to the current draft to save it"}
-              disabled={!trip.itinerary || viewing !== "current"}
-              onClick={onSaveVersion}
-            >
-              <BookmarkIcon size={16} />
-              <span className="btn-label">Save version</span>
-            </button>
-          )}
           <div className="menu">
             <button
-              className="btn primary"
+              className="btn"
               aria-label="Export"
               aria-haspopup="menu"
               aria-expanded={exportOpen}
@@ -167,6 +179,12 @@ export function ItineraryPane(props: Props) {
               </div>
             )}
           </div>
+          {onShare && (
+            <button className="btn primary share-btn" aria-label="Share" onClick={onShare}>
+              <UserPlusIcon size={16} />
+              <span className="btn-label">Share</span>
+            </button>
+          )}
         </div>
       </div>
       <div className="pane-body">
@@ -181,11 +199,11 @@ export function ItineraryPane(props: Props) {
               map={<TripMap itinerary={itinerary} lookup={lookup} loading={placesLoading} />}
             />
           ) : (
-            <p className="it-empty">
-              {working
-                ? "Researching your trip. The itinerary will appear here."
-                : "No itinerary yet. Describe your trip in the chat to get started."}
-            </p>
+            working ? (
+              <ItinerarySkeleton label="Researching your trip…" caption="Researching your trip. The itinerary will appear here." />
+            ) : (
+              <p className="it-empty">No itinerary yet. Describe your trip in the chat to get started.</p>
+            )
           )}
         </div>
         {commentAnchor !== undefined && (

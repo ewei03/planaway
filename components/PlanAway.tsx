@@ -20,7 +20,8 @@ import { ItineraryPane } from "./ItineraryPane";
 import { MapsProvider, usePlaceQueries, type MapsConfig } from "./places";
 import { ShareDialog } from "./ShareDialog";
 import { Sidebar } from "./Sidebar";
-import { clampSplit, SplitHandle } from "./SplitHandle";
+import { TripSkeleton } from "./Skeleton";
+import { clampChat, clampSidebar, DEFAULT_CHAT, DEFAULT_SIDEBAR, SidebarHandle, SplitHandle } from "./SplitHandle";
 import { INSPIRATION_QUERIES, StartScreen } from "./StartScreen";
 import type { UserSettings } from "@/lib/settings";
 
@@ -32,17 +33,36 @@ const DRAWER_QUERY = "(max-width: 760px)";
 const COLLAPSED_KEY = "planaway:sidebar-collapsed";
 const CHAT_HIDDEN_KEY = "planaway:chat-hidden";
 // The chat's share of the workspace width; the itinerary gets the rest.
-const SPLIT_KEY = "planaway:chat-split";
-const DEFAULT_SPLIT = 0.44;
+// The chat's width in pixels (it used to be a share of the width, under planaway:chat-split).
+const CHAT_WIDTH_KEY = "planaway:chat-width";
+const SIDEBAR_WIDTH_KEY = "planaway:sidebar-width";
 
 /** The user's activity colors as the CSS variables the itinerary's icons read. */
 function activityColorVars(colors: UserSettings["activityColors"]): React.CSSProperties {
   return Object.fromEntries(Object.entries(colors).map(([category, color]) => [`--cat-${category}`, color]));
 }
 
-export function PlanAway({ user, settings, maps }: { user: SessionUser; settings: UserSettings; maps: MapsConfig }) {
+export function PlanAway({
+  user,
+  settings,
+  maps,
+  initialTripId = null,
+}: {
+  user: SessionUser;
+  settings: UserSettings;
+  maps: MapsConfig;
+  /** The trip in the URL, known on the server, so the first render shows it loading rather than the start screen. */
+  initialTripId?: string | null;
+}) {
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [trip, setTrip] = useState<TripView | null>(null);
+  const [tripsLoaded, setTripsLoaded] = useState(false);
+  /** The trip being fetched, shown as a skeleton meanwhile. */
+  const [opening, setOpening] = useState<string | null>(initialTripId);
+  // The latest trip asked for; a slower, earlier request mustn't replace it.
+  const openingRef = useRef<string | null>(initialTripId);
+  /** Switching from one open trip to another: wait a moment before the skeleton, so quick loads don't flash. */
+  const [openingSlow, setOpeningSlow] = useState(false);
   const [viewing, setViewing] = useState("current");
   const [live, setLive] = useState<LiveTurn[]>([]);
   const [streamingHere, setStreamingHere] = useState(false);
@@ -55,7 +75,8 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
   // Hides the chat column on wide screens so the itinerary gets the full width.
   const [chatHidden, setChatHidden] = useState(false);
   const [showItinerary, setShowItinerary] = useState(false);
-  const [split, setSplit] = useState(DEFAULT_SPLIT);
+  const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR);
   const [sharingTrip, setSharingTrip] = useState<string | null>(null);
   /** Other people with the open trip on screen right now. */
   const [viewers, setViewers] = useState<UserRef[]>([]);
@@ -86,15 +107,24 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
     try {
       if (localStorage.getItem(COLLAPSED_KEY) === "1") setSidebarCollapsed(true);
       if (localStorage.getItem(CHAT_HIDDEN_KEY) === "1") setChatHidden(true);
-      const saved = Number(localStorage.getItem(SPLIT_KEY));
-      if (saved > 0) setSplit(clampSplit(saved));
+      const saved = Number(localStorage.getItem(CHAT_WIDTH_KEY));
+      if (saved > 0) setChatWidth(clampChat(saved));
+      const width = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+      if (width > 0) setSidebarWidth(clampSidebar(width));
     } catch {}
   }, []);
 
-  const resizeSplit = (value: number) => {
-    setSplit(value);
+  const resizeSidebar = (value: number) => {
+    setSidebarWidth(value);
     try {
-      localStorage.setItem(SPLIT_KEY, String(value));
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(value));
+    } catch {}
+  };
+
+  const resizeChat = (value: number) => {
+    setChatWidth(value);
+    try {
+      localStorage.setItem(CHAT_WIDTH_KEY, String(value));
     } catch {}
   };
 
@@ -124,10 +154,22 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
 
   /** Reloads the sidebar: the user's trips and the ones shared with them. */
   const loadTrips = useCallback(() => {
-    api<TripSummary[]>("/api/trips").then(setTrips, (err: Error) => notify(err.message));
+    api<TripSummary[]>("/api/trips")
+      .then(setTrips, (err: Error) => notify(err.message))
+      .finally(() => setTripsLoaded(true));
   }, [notify]);
 
+  useEffect(() => {
+    if (!opening) return setOpeningSlow(false);
+    const timer = setTimeout(() => setOpeningSlow(true), 200);
+    return () => clearTimeout(timer);
+  }, [opening]);
+  // With nothing on screen yet, show the skeleton at once; otherwise keep the old trip briefly.
+  const showTripSkeleton = opening !== null && (!trip || openingSlow);
+
   const showTrip = useCallback((next: TripView | null) => {
+    openingRef.current = null;
+    setOpening(null);
     activeId.current = next?.id ?? null;
     setTrip(next);
     setViewing("current");
@@ -140,9 +182,13 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
 
   const openTrip = useCallback(
     async (id: string) => {
+      openingRef.current = id;
+      setOpening(id);
       try {
-        showTrip(await api<TripView>(`/api/trips/${id}`));
+        const next = await api<TripView>(`/api/trips/${id}`);
+        if (openingRef.current === id) showTrip(next);
       } catch (err) {
+        if (openingRef.current !== id) return;
         notify((err as Error).message);
         showTrip(null);
       }
@@ -343,7 +389,7 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
     <MapsProvider value={maps}>
       <div
         className={`app ${sidebarOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
-        style={activityColorVars(settings.activityColors)}
+        style={{ ...activityColorVars(settings.activityColors), "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties}
         onClick={(e) => {
           if (sidebarOpen && !(e.target as Element).closest(".sidebar, .open-sidebar")) setSidebarOpen(false);
         }}
@@ -351,6 +397,7 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
         <Sidebar
           user={user}
           trips={trips}
+          loading={!tripsLoaded}
           lookup={photos}
           activeId={trip?.id ?? null}
           onSelect={openTrip}
@@ -364,12 +411,15 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
           onSignOut={() => signOut({ redirectTo: "/login" })}
           onHide={hideSidebar}
         />
+        {!sidebarCollapsed && <SidebarHandle width={sidebarWidth} onChange={resizeSidebar} onReset={() => resizeSidebar(DEFAULT_SIDEBAR)} />}
 
         <main className="main">
-          {trip ? (
+          {showTripSkeleton ? (
+            <TripSkeleton />
+          ) : trip ? (
             <section
               className={`workspace ${showItinerary ? "show-itinerary" : ""} ${chatHidden ? "chat-hidden" : ""}`}
-              style={{ "--chat-fr": `${split}fr`, "--pane-fr": `${1 - split}fr` } as React.CSSProperties}
+              style={{ "--chat-w": `${chatWidth}px` } as React.CSSProperties}
             >
               <Chat
                 trip={trip}
@@ -383,7 +433,7 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
                 onShowItinerary={() => setShowItinerary(true)}
                 onHide={() => hideChat(true)}
               />
-              <SplitHandle split={split} onChange={resizeSplit} onReset={() => resizeSplit(DEFAULT_SPLIT)} />
+              <SplitHandle width={chatWidth} onChange={resizeChat} onReset={() => resizeChat(DEFAULT_CHAT)} />
               <ItineraryPane
                 trip={trip}
                 user={user}
@@ -394,6 +444,7 @@ export function PlanAway({ user, settings, maps }: { user: SessionUser; settings
                 onSaveVersion={() => saveVersion(trip.id)}
                 onExport={(format) => exportTrip(trip.id, format)}
                 onBack={() => setShowItinerary(false)}
+                onShare={trip.role === "owner" ? () => setSharingTrip(trip.id) : undefined}
                 chatHidden={chatHidden}
                 onShowChat={() => hideChat(false)}
                 onShowTrips={sidebarCollapsed ? showSidebar : undefined}

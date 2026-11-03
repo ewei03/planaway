@@ -32,6 +32,20 @@ function setup(overrides: Partial<ComponentProps<typeof ItineraryPane>> = {}) {
 const version = { id: "v1", label: "First draft", savedAt: "2026-10-01T10:00:00Z", savedBy: me.id, itinerary: { ...sampleItinerary(), title: "Old plan" } };
 
 describe("ItineraryPane", () => {
+  it("puts sharing up front for the owner: a Share button and an empty seat by the faces", async () => {
+    const onShare = vi.fn();
+    setup({ onShare });
+    await userEvent.click(screen.getByRole("button", { name: "Share" }));
+    await userEvent.click(screen.getByRole("button", { name: "Invite people" }));
+    expect(onShare).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves sharing out for people who can't invite", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Invite people" })).toBeNull();
+  });
+
   it("offers to bring back a hidden chat, and the trips if those are hidden too", async () => {
     const { props, view } = setup();
     expect(screen.queryByRole("button", { name: "Show chat" })).toBeNull();

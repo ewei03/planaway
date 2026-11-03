@@ -117,6 +117,12 @@ export const UsersIcon = ({ size }: P) => (
     <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.2.6 3.5 2.8 3.5 6" />
   </Icon>
 );
+export const UserPlusIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M19 8v6M16 11h6" />
+  </Icon>
+);
 export const PlaneIcon = ({ size }: P) => (
   <Icon size={size}>
     <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" />
