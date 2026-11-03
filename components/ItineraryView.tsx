@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
+import { createContext, memo, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { activityQuery, heroPhotos, lodgingQuery } from "@/lib/route";
 import { anchorKey, money, safeUrl, type CommentAnchor, type CommentTarget, type Itinerary } from "./client";
 import { CalendarIcon, CategoryIcon, CommentIcon, PlaneIcon, UsersIcon, WalletIcon, WeatherIcon } from "./icons";
-import { CoverPhotos, PlaceThumb, type PlaceLookup } from "./places";
+import { CoverPhotos, PlaceThumb, type Place, type PlaceLookup } from "./places";
 import { TipText } from "./TipText";
 
 type Day = Itinerary["days"][number];
@@ -163,7 +163,19 @@ function Row({ title, sub, price, comment, thumb }: { title: ReactNode; sub: (st
 const noPlaces: PlaceLookup = () => undefined;
 
 /** A day as a timeline: time, category icon, then the activity. */
-function DayCard({ day, currency, lookup, ...c }: { day: Day; currency: string; lookup: PlaceLookup } & CommentProps) {
+type DayCardProps = {
+  day: Day;
+  currency: string;
+  /** Each activity's place, in order; undefined until it's been looked up. */
+  places: (Place | null | undefined)[];
+} & CommentProps;
+
+/**
+ * One day of the timeline. Places arrive a few at a time while the itinerary
+ * is open, so a day redraws only when one of its own places, or something else
+ * it shows, has changed; redrawing every day for each batch was the slow part.
+ */
+const DayCard = memo(function DayCard({ day, currency, places, ...c }: DayCardProps) {
   return (
     <div className="day">
       <div className="day-head">
@@ -182,7 +194,7 @@ function DayCard({ day, currency, lookup, ...c }: { day: Day; currency: string; 
             </span>
             <div className="act-card">
               <div className="act-body">
-                <PlaceThumb place={lookupActivity(lookup, a, day)} label={a.name} />
+                <PlaceThumb place={places[i]} label={a.name} />
                 <div>
                   <div className="act-name">
                     <Link text={a.name} url={a.url} />
@@ -200,7 +212,7 @@ function DayCard({ day, currency, lookup, ...c }: { day: Day; currency: string; 
       </ol>
     </div>
   );
-}
+}, sameDay);
 
 /** "2027-04-02" as a local date, so the day doesn't shift with the time zone. */
 function parseDate(iso: string | null): Date | null {
@@ -262,6 +274,17 @@ function Stat({ icon, label, value, sub }: { icon: ReactNode; label: string; val
         {sub && <span className="stat-sub">{sub}</span>}
       </span>
     </div>
+  );
+}
+
+function sameDay(a: DayCardProps, b: DayCardProps): boolean {
+  return (
+    a.day === b.day &&
+    a.currency === b.currency &&
+    a.counts === b.counts &&
+    a.onComment === b.onComment &&
+    a.places.length === b.places.length &&
+    a.places.every((p, i) => p === b.places[i])
   );
 }
 
@@ -365,7 +388,7 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
       <InfoBox id="days" icon="📅" title="Day by day" count={it.days.length}>
         <div className="box-pad">
           {it.days.map((d, i) => (
-            <DayCard key={d.id || i} day={d} currency={c} lookup={lookup} {...cp} />
+            <DayCard key={d.id || i} day={d} currency={c} places={d.activities.map((a) => lookupActivity(lookup, a, d))} {...cp} />
           ))}
         </div>
       </InfoBox>

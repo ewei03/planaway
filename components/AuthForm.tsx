@@ -45,7 +45,8 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
     <div className="auth-split">
       <AuthArt />
       <main className="auth-page">
-        <div className="auth-card">
+        {/* Keyed by mode so switching between sign-in and sign-up replays the entrance; the typed values live in state above. */}
+        <div className="auth-card" key={mode}>
           <div className="brand">
             <span className="logo" aria-hidden="true">
               <LogoIcon />
@@ -53,7 +54,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
             <span className="brand-name">PlanAway</span>
           </div>
           <h1>{registering ? "Create your account" : "Welcome back"}</h1>
-          <p className="muted">{registering ? "Plan trips with an AI agent, together with your friends." : "Sign in to your trips."}</p>
+          <p className="muted">{registering ? "Plan trips together with your friends." : "Sign in to your trips."}</p>
           {notice && (
             <p className="auth-notice" role="status">
               {notice}
@@ -97,7 +98,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
               </p>
             )}
             <button className="btn primary block" disabled={busy}>
-              {busy ? "One moment…" : registering ? "Create account" : "Sign in"}
+              {busy ? "Signing in..." : registering ? "Create account" : "Sign in"}
             </button>
           </form>
 
