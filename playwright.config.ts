@@ -52,6 +52,7 @@ export default defineConfig({
         COMMONS_URL: `http://localhost:${MOCK_PORT}`,
         MAP_STYLE_URL: `http://localhost:${MOCK_PORT}/style.json`,
         AUTH_SECRET: "e2e-test-secret-not-for-production-use",
+        CONTACT_EMAIL: "help@planaway.test",
       },
     },
   ],

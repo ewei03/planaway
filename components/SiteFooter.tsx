@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-// The pages behind these links don't exist yet; they'll 404 until they're built.
+// Each page is in app/ (app/about, app/help, …) and open to everyone.
 export const FOOTER_LINKS: [href: string, label: string][] = [
   ["/about", "About"],
   ["/help", "Help"],

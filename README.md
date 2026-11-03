@@ -129,6 +129,8 @@ Settings in `.env`:
 | `MAP_STYLE_URL` | OpenFreeMap "liberty" | MapLibre style for the route map |
 | `NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Place search |
 | `NOMINATIM_EMAIL` | (unset) | Contact address sent to Nominatim |
+| `PHOTON_URL` | `https://photon.komoot.io` | Starting point suggestions in Settings |
+| `CONTACT_EMAIL` | (unset) | Address shown on the Contact, Privacy, and Terms pages |
 | `PLANAWAY_EFFORT` | `medium` | `low` to `max`. Higher means more thorough research and higher cost. |
 
 ## Notes
