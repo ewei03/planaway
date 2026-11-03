@@ -18,8 +18,15 @@ import {
   getItineraryForExport,
   getTripRevision,
   getTripSharing,
+  getAvatar,
+  getProfile,
   getTripView,
   listTrips,
+  changeEmail,
+  renameUser,
+  saveSettings,
+  setAvatar,
+  InvalidInputError,
   loadTurnContext,
   releaseTurn,
   removeTripMember,
@@ -91,6 +98,77 @@ describe("users", () => {
     const [row] = await db.select().from(s.users).where(eq(s.users.id, u.id));
     expect(row.passwordHash).not.toContain(u.password);
     expect(row.passwordHash).toMatch(/^\$2[aby]\$12\$/);
+  });
+});
+
+describe("profile and settings", () => {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+  it("starts with no photo and default settings", async () => {
+    const u = await makeUser("Fresh");
+    expect(await getProfile(u.id)).toMatchObject({
+      id: u.id,
+      name: "Fresh",
+      email: u.email,
+      avatarUrl: null,
+      settings: { theme: "system", activityColors: {}, defaults: { currency: null, origin: null } },
+    });
+  });
+
+  it("renames, and the new name is what collaborators see", async () => {
+    const u = await makeUser("Old Name");
+    await renameUser(u.id, "  New Name ");
+    expect((await getProfile(u.id)).name).toBe("New Name");
+  });
+
+  it("changes the email only with the right password, and only to a free address", async () => {
+    const u = await makeUser("Mover");
+    await expect(changeEmail(u.id, "moved@example.com", "wrong password")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(changeEmail(u.id, (await getProfile(owner.id)).email, u.password)).rejects.toBeInstanceOf(ConflictError);
+    const fresh = `moved-${Date.now()}@example.com`;
+    await changeEmail(u.id, ` ${fresh.toUpperCase()} `, u.password);
+    expect((await getProfile(u.id)).email).toBe(fresh);
+    expect(await verifyCredentials(fresh, u.password)).toMatchObject({ id: u.id });
+  });
+
+  it("saves settings, cleaning anything stored badly", async () => {
+    const u = await makeUser("Prefs");
+    const saved = await saveSettings(u.id, {
+      theme: "dark",
+      activityColors: { food: "#123456" },
+      defaults: { currency: "EUR", origin: "Lisbon", travelMode: "train", travelers: 3, pace: "packed" },
+    });
+    expect(saved.theme).toBe("dark");
+    expect((await getProfile(u.id)).settings).toEqual(saved);
+  });
+
+  it("stores a photo, serves its bytes, and changes its URL with each upload", async () => {
+    const u = await makeUser("Photo");
+    const first = await setAvatar(u.id, png);
+    expect(first).toMatch(new RegExp(`^/api/avatars/${u.id}\\?v=\\d+$`));
+    expect((await getProfile(u.id)).avatarUrl).toBe(first);
+    expect(await getAvatar(u.id)).toMatchObject({ type: "image/png" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(await setAvatar(u.id, png)).not.toBe(first);
+    await setAvatar(u.id, null);
+    expect(await getAvatar(u.id)).toBeNull();
+    expect((await getProfile(u.id)).avatarUrl).toBeNull();
+  });
+
+  it("rejects photos that aren't images or are too large", async () => {
+    const u = await makeUser("BadPhoto");
+    await expect(setAvatar(u.id, "data:text/html;base64,PGgxPg==")).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(setAvatar(u.id, "https://example.com/me.png")).rejects.toBeInstanceOf(InvalidInputError);
+    const huge = `data:image/jpeg;base64,${"A".repeat(500 * 1024)}`;
+    await expect(setAvatar(u.id, huge)).rejects.toThrow("too large");
+  });
+
+  it("shows collaborators' photos in the viewer list", async () => {
+    const tripId = await crewTrip();
+    const url = await setAvatar(editor.id, png);
+    await getTripRevision(editor.id, tripId);
+    expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([{ id: editor.id, name: "Editor", avatarUrl: url }]);
+    await setAvatar(editor.id, null);
   });
 });
 
@@ -289,8 +367,8 @@ describe("trips", () => {
     expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([]);
     await getTripRevision(editor.id, tripId);
     // Never lists yourself.
-    expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([{ id: editor.id, name: "Editor" }]);
-    expect((await getTripRevision(editor.id, tripId)).viewers).toEqual([{ id: owner.id, name: "Owner" }]);
+    expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([{ id: editor.id, name: "Editor", avatarUrl: null }]);
+    expect((await getTripRevision(editor.id, tripId)).viewers).toEqual([{ id: owner.id, name: "Owner", avatarUrl: null }]);
 
     // Someone who stopped polling drops off.
     const db = await getDb();
@@ -301,7 +379,7 @@ describe("trips", () => {
   it("counts someone running an agent turn as viewing, though their tab stops polling", async () => {
     const tripId = await crewTrip();
     await claimTurn(editor.id, tripId);
-    expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([{ id: editor.id, name: "Editor" }]);
+    expect((await getTripRevision(owner.id, tripId)).viewers).toEqual([{ id: editor.id, name: "Editor", avatarUrl: null }]);
     await releaseTurn(tripId);
   });
 

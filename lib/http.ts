@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { ConflictError, ForbiddenError, NotFoundError } from "./store";
+import { ConflictError, ForbiddenError, InvalidInputError, NotFoundError } from "./store";
 
 export type IdParams = { params: Promise<{ id: string }> };
 
@@ -37,6 +37,7 @@ export function handler<A extends unknown[]>(fn: (...args: A) => Promise<Respons
       if (err instanceof NotFoundError) return jsonError(err.message, 404);
       if (err instanceof ForbiddenError) return jsonError(err.message, 403);
       if (err instanceof ConflictError) return jsonError(err.message, 409);
+      if (err instanceof InvalidInputError) return jsonError(err.message, 400);
       console.error(err);
       return jsonError("Internal server error", 500);
     }

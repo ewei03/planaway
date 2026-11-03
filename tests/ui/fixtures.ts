@@ -39,10 +39,10 @@ export function commentView(overrides: Partial<CommentView> = {}): CommentView {
   };
 }
 
-/** A fetch stub that answers JSON (or 204) and records calls. */
+/** A fetch stub that answers JSON (or 204) and records calls. `respond` may return a promise, to answer later. */
 export function mockFetch(respond: (url: string, init?: RequestInit) => unknown = () => null) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const result = respond(String(input), init);
+    const result = await respond(String(input), init);
     if (result instanceof Response) return result;
     return result === null ? new Response(null, { status: 204 }) : Response.json(result);
   });

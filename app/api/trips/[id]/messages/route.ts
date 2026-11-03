@@ -1,6 +1,7 @@
 import { composeUserMessage, runTurn, type AgentEvent } from "@/lib/agent";
 import { body, handler, jsonError, requireUser, str, type IdParams } from "@/lib/http";
-import { claimTurn, commitTurn, getTripRevision, loadTurnContext, releaseTurn } from "@/lib/store";
+import { describeDefaults } from "@/lib/settings";
+import { claimTurn, commitTurn, getProfile, getTripRevision, loadTurnContext, releaseTurn } from "@/lib/store";
 
 // Sends a message to the agent and streams its progress back as Server-Sent
 // Events. The turn keeps running if the browser disconnects, so work isn't
@@ -32,12 +33,14 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
       const send = (event: AgentEvent) => write(`data: ${JSON.stringify(event)}\n\n`);
       const heartbeat = setInterval(() => write(": keep-alive\n\n"), 15000);
       try {
-        const ctx = await loadTurnContext(tripId);
+        const [ctx, profile] = await Promise.all([loadTurnContext(tripId), getProfile(user.id)]);
         const userContent = composeUserMessage({
-          authorName: user.name,
+          // From the database, not the sign-in session, so a name changed in settings applies.
+          authorName: profile.name,
           text,
           firstTurn: ctx.history.length === 0,
           newComments: ctx.newComments,
+          defaults: describeDefaults(profile.settings.defaults),
         });
         const result = await runTurn(
           { history: ctx.history, userContent, itinerary: ctx.itinerary, openThreads: ctx.openThreads },

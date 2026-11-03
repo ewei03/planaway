@@ -22,6 +22,7 @@ import { ShareDialog } from "./ShareDialog";
 import { Sidebar } from "./Sidebar";
 import { clampSplit, SplitHandle } from "./SplitHandle";
 import { INSPIRATION_QUERIES, StartScreen } from "./StartScreen";
+import type { UserSettings } from "@/lib/settings";
 
 const POLL_MS = 4000;
 /** Shown the whole time the agent works. Its step-by-step status events (searching, writing...) aren't shown. */
@@ -34,7 +35,12 @@ const CHAT_HIDDEN_KEY = "planaway:chat-hidden";
 const SPLIT_KEY = "planaway:chat-split";
 const DEFAULT_SPLIT = 0.44;
 
-export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }) {
+/** The user's activity colors as the CSS variables the itinerary's icons read. */
+function activityColorVars(colors: UserSettings["activityColors"]): React.CSSProperties {
+  return Object.fromEntries(Object.entries(colors).map(([category, color]) => [`--cat-${category}`, color]));
+}
+
+export function PlanAway({ user, settings, maps }: { user: SessionUser; settings: UserSettings; maps: MapsConfig }) {
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [trip, setTrip] = useState<TripView | null>(null);
   const [viewing, setViewing] = useState("current");
@@ -337,6 +343,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
     <MapsProvider value={maps}>
       <div
         className={`app ${sidebarOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+        style={activityColorVars(settings.activityColors)}
         onClick={(e) => {
           if (sidebarOpen && !(e.target as Element).closest(".sidebar, .open-sidebar")) setSidebarOpen(false);
         }}
@@ -400,6 +407,7 @@ export function PlanAway({ user, maps }: { user: SessionUser; maps: MapsConfig }
               onOpenSidebar={showSidebar}
               userName={user.name}
               lookup={photos}
+              defaults={settings.defaults}
               pastDestinations={[...new Set(trips.flatMap((t) => t.destinations))]}
               busyWith={planningId ? (findTrip(planningId)?.title ?? "your trip") : null}
               onOpenBusy={() => planningId && openTrip(planningId)}

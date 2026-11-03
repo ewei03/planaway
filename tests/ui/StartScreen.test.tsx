@@ -59,22 +59,25 @@ describe("StartScreen", () => {
     expect(prompt(onStart)).toContain("Destination ideas: Portugal.");
   });
 
-  it("Surprise me uses only the shared constraints", async () => {
-    const { onStart } = setup();
+  it("Surprise me sits with I have an idea and starts from the saved defaults, not the other tab's form", async () => {
+    const onStart = vi.fn(async () => {});
+    render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} defaults={{ currency: "EUR", origin: "Denver", travelMode: null, travelers: 2, pace: null }} />);
     await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));
-    await userEvent.type(screen.getByLabelText("Leaving from"), "Denver");
-    await userEvent.click(screen.getByLabelText("Nightlife"));
+    expect(screen.queryByRole("button", { name: "Surprise me!" })).toBeNull();
+    await userEvent.clear(screen.getByLabelText("Leaving from"));
+    await userEvent.type(screen.getByLabelText("Leaving from"), "Boston");
+    await userEvent.click(screen.getByRole("tab", { name: "I have an idea" }));
+    // The idea box is required, but Surprise me doesn't need it.
     await userEvent.click(screen.getByRole("button", { name: "Surprise me!" }));
-    const p = prompt(onStart);
+    const p = (onStart.mock.calls[0] as unknown as [string])[0];
     expect(p).toMatch(/^Surprise me!/);
     expect(p).toContain("Leaving from: Denver.");
-    expect(p).not.toContain("Interests");
+    expect(p).not.toContain("Boston");
   });
 
   it("Surprise me picks the region itself, a different one each time, and avoids past trips", async () => {
     const onStart = vi.fn(async () => {});
     render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} pastDestinations={["Muscat", "Kyoto"]} />);
-    await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));
     const random = vi.spyOn(Math, "random").mockReturnValueOnce(0).mockReturnValueOnce(0.999);
     await userEvent.click(screen.getByRole("button", { name: "Surprise me!" }));
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "Surprise me!" })).toBeEnabled());
@@ -112,5 +115,20 @@ describe("StartScreen", () => {
     expect(screen.getByRole("button", { name: "Plan this trip" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "View progress" }));
     expect(onOpenBusy).toHaveBeenCalled();
+  });
+
+  it("pre-fills Plan it for me from the user's saved defaults", async () => {
+    render(
+      <StartScreen
+        onStart={vi.fn(async () => {})}
+        onOpenSidebar={vi.fn()}
+        defaults={{ currency: "EUR", origin: "Lisbon", travelMode: "train", travelers: 3, pace: "relaxed" }}
+      />,
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Plan it for me" }));
+    expect(screen.getByLabelText("Leaving from")).toHaveValue("Lisbon");
+    expect(screen.getByLabelText("Travelers")).toHaveValue(3);
+    expect(screen.getByRole("combobox", { name: "Currency" })).toHaveValue("EUR");
+    expect(screen.getByLabelText("Pace")).toHaveValue("relaxed");
   });
 });

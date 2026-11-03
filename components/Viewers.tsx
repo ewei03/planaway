@@ -1,4 +1,7 @@
+import { Avatar } from "./Avatar";
 import type { UserRef } from "./client";
+
+type Person = UserRef & { avatarUrl?: string | null };
 
 /**
  * Circles shown before the rest collapse into +N, counting you, by pane width.
@@ -21,7 +24,7 @@ function hue(id: string): number {
  * Overlapping initials for everyone looking at this trip right now: you first,
  * then the others, then a +N circle for whoever doesn't fit.
  */
-export function Viewers({ me, viewers }: { me: UserRef; viewers: UserRef[] }) {
+export function Viewers({ me, viewers }: { me: Person; viewers: Person[] }) {
   const everyone = [{ ...me, you: true }, ...viewers.filter((v) => v.id !== me.id).map((v) => ({ ...v, you: false }))];
   const names = everyone.map((v) => (v.you ? "You" : v.name)).join(", ");
   // A circle is hidden in every tier whose cut-off it's past.
@@ -38,7 +41,7 @@ export function Viewers({ me, viewers }: { me: UserRef; viewers: UserRef[] }) {
           title={v.you ? `You (${v.name})` : `${v.name} is viewing`}
           style={{ background: `hsl(${hue(v.id)} 50% 42%)` }}
         >
-          {v.name.slice(0, 1).toUpperCase()}
+          <Avatar name={v.name} url={v.avatarUrl} className="viewer-face" />
         </span>
       ))}
       {TIERS.map(({ max, name }) => {

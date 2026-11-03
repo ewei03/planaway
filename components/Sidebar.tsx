@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { canEdit, EXPORT_FORMATS, relativeTime, useMinuteTick, type ExportFormat, type SessionUser, type TripSummary } from "./client";
 import { areaQuery } from "@/lib/route";
-import { CloseIcon, LogoIcon, PlusIcon } from "./icons";
+import Link from "next/link";
+import { Avatar } from "./Avatar";
+import { CloseIcon, GearIcon, LogoIcon, PlusIcon } from "./icons";
 import { credit, type PlaceLookup } from "./places";
 import { SiteFooter } from "./SiteFooter";
 
@@ -245,14 +247,13 @@ export function Sidebar(props: Props) {
       </div>
 
       <div className="user-footer">
-        <div className="user-info">
-          <span className="avatar" aria-hidden="true">
-            {user.name.slice(0, 1).toUpperCase()}
+        <Link className="user-info" href="/settings" title="Settings">
+          <Avatar name={user.name} url={user.avatarUrl} />
+          <span className="user-name">{user.name}</span>
+          <span className="user-settings" aria-hidden="true">
+            <GearIcon size={15} />
           </span>
-          <span className="user-name" title={user.email}>
-            {user.name}
-          </span>
-        </div>
+        </Link>
         <button className="link-btn" onClick={onSignOut}>
           Sign out
         </button>

@@ -95,6 +95,20 @@ describe("composeUserMessage", () => {
     expect(msg).toBe("(Today's date is 2026-10-28.)\n\n[Maya] Plan Kyoto");
   });
 
+  it("hands the sender's defaults to the agent on the first turn only", () => {
+    vi.useFakeTimers({ now: new Date("2026-10-28T12:00:00Z") });
+    const defaults = ["Starting point: SFO (usually flies)", "Travelers: 2"];
+    const first = composeUserMessage({ authorName: "Maya", text: "Plan Kyoto", firstTurn: true, newComments: [], defaults });
+    vi.useRealTimers();
+    expect(first).toBe(
+      "(Today's date is 2026-10-28.)\n\n" +
+        "<traveler_defaults>\nUse these for anything the request below doesn't specify:\n- Starting point: SFO (usually flies)\n- Travelers: 2\n</traveler_defaults>\n\n" +
+        "[Maya] Plan Kyoto",
+    );
+    expect(composeUserMessage({ authorName: "Maya", text: "hi", firstTurn: false, newComments: [], defaults })).toBe("[Maya] hi");
+    expect(composeUserMessage({ authorName: "Maya", text: "hi", firstTurn: true, newComments: [], defaults: [] })).not.toContain("traveler_defaults");
+  });
+
   it("omits the date on later turns", () => {
     expect(composeUserMessage({ authorName: "Maya", text: "hi", firstTurn: false, newComments: [] })).toBe("[Maya] hi");
   });

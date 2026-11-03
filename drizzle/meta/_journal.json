@@ -50,6 +50,13 @@
       "when": 1793647892254,
       "tag": "0006_drop_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793659051074,
+      "tag": "0007_user_settings",
+      "breakpoints": true
     }
   ]
 }

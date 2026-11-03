@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Itinerary } from "../itinerary";
+import type { UserSettings } from "../settings";
 import type { Place } from "../route";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -24,6 +25,12 @@ export const users = pgTable(
     email: text("email").notNull(),
     name: text("name").notNull(),
     passwordHash: text("password_hash").notNull(),
+    /** Profile photo as a data: URL, already shrunk by the browser. */
+    avatar: text("avatar"),
+    /** Changes with the photo, so its URL changes and caches refresh. */
+    avatarUpdatedAt: timestamp("avatar_updated_at", { withTimezone: true }),
+    /** Appearance and trip defaults; see lib/settings.ts. Read through parseSettings. */
+    settings: jsonb("settings").$type<Partial<UserSettings>>().notNull().default({}),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_email_idx").on(t.email)],

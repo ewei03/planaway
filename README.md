@@ -66,6 +66,11 @@ Run `npx playwright install chromium` once before the first e2e run.
 
 Create an account. Your trips are listed in the sidebar under **Your trips**, each with when it was last updated. Rename a trip from its ⋯ menu, or by clicking its title.
 
+**Settings** (click your name at the bottom of the sidebar):
+- **Profile:** name, email (changing it asks for your password, since it's how you sign in), and a profile photo, shown in the sidebar and to people viewing a trip with you.
+- **Appearance:** light, dark, or match your device, and a color for each kind of activity on the timeline.
+- **Trip defaults:** starting point, how you usually travel, number of travelers, currency, and pace. PlanAway uses them for anything a new trip request doesn't mention (what you say in the request wins), and they pre-fill **Plan it for me**.
+
 **Starting a trip:**
 - **I have an idea**: describe the trip in your own words.
 - **Plan it for me**: fill in origin, budget, dates, interests, and pace. PlanAway picks the destination if you leave it blank.

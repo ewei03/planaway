@@ -47,6 +47,7 @@ export default defineConfig({
         // too, so tests never hit OpenStreetMap or Wikimedia.
         NOMINATIM_URL: `http://localhost:${MOCK_PORT}`,
         NOMINATIM_INTERVAL_MS: "0",
+        PHOTON_URL: `http://localhost:${MOCK_PORT}`,
         WIKIDATA_URL: `http://localhost:${MOCK_PORT}`,
         COMMONS_URL: `http://localhost:${MOCK_PORT}`,
         MAP_STYLE_URL: `http://localhost:${MOCK_PORT}/style.json`,

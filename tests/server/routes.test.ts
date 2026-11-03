@@ -27,6 +27,10 @@ import * as exportRoute from "@/app/api/trips/[id]/export/route";
 import * as messages from "@/app/api/trips/[id]/messages/route";
 import * as revision from "@/app/api/trips/[id]/revision/route";
 import * as versions from "@/app/api/trips/[id]/versions/route";
+import * as settings from "@/app/api/settings/route";
+import * as preferences from "@/app/api/settings/preferences/route";
+import * as avatarUpload from "@/app/api/settings/avatar/route";
+import * as avatars from "@/app/api/avatars/[id]/route";
 
 function signIn(user: UserRef | null) {
   authMock.mockResolvedValue(user ? { user: { id: user.id, name: user.name } } : null);
@@ -69,6 +73,54 @@ describe("authentication", () => {
     const res = await call();
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Please sign in." });
+  });
+});
+
+describe("settings API", () => {
+  it("validates profile changes", async () => {
+    const patch = (b: unknown) => settings.PATCH(req("PATCH", "/api/settings", b));
+    expect((await patch({ name: "  " })).status).toBe(400);
+    expect((await patch({ email: "nope" })).status).toBe(400);
+    expect(await (await patch({ email: "new@example.com" })).json()).toEqual({ error: "Enter your current password to change your email." });
+    expect((await patch({ email: "new@example.com", password: "wrong one" })).status).toBe(403);
+  });
+
+  it("renames and returns the fresh profile", async () => {
+    const u = await makeUser("Renamer");
+    signIn(u);
+    const res = await settings.PATCH(req("PATCH", "/api/settings", { name: "Renamed" }));
+    expect(await res.json()).toMatchObject({ id: u.id, name: "Renamed", email: u.email });
+  });
+
+  it("saves valid preferences and rejects invalid ones", async () => {
+    // Its own user: saved defaults would show up in other tests' first messages.
+    signIn(await makeUser("Prefs"));
+    const good = {
+      theme: "light",
+      activityColors: { rest: "#00aa00" },
+      defaults: { currency: "GBP", origin: "Manchester", travelMode: "drive", travelers: 4, pace: "relaxed" },
+    };
+    const res = await preferences.PUT(req("PUT", "/", good));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(good);
+    expect((await preferences.PUT(req("PUT", "/", { ...good, theme: "neon" }))).status).toBe(400);
+    expect((await preferences.PUT(req("PUT", "/", { theme: "dark" }))).status).toBe(400);
+  });
+
+  it("uploads, serves, and removes a profile photo", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    expect((await avatarUpload.PUT(req("PUT", "/", { dataUrl: "data:text/plain;base64,aGk=" }))).status).toBe(400);
+    const { avatarUrl } = await (await avatarUpload.PUT(req("PUT", "/", { dataUrl: png }))).json();
+    expect(avatarUrl).toContain(`/api/avatars/${owner.id}`);
+
+    const photo = await avatars.GET(req("GET", avatarUrl), params({ id: owner.id }));
+    expect(photo.headers.get("content-type")).toBe("image/png");
+    expect(photo.headers.get("cache-control")).toContain("immutable");
+    signIn(null);
+    expect((await avatars.GET(req("GET", avatarUrl), params({ id: owner.id }))).status).toBe(401);
+    signIn(owner);
+    expect((await avatarUpload.DELETE()).status).toBe(204);
+    expect((await avatars.GET(req("GET", avatarUrl), params({ id: owner.id }))).status).toBe(404);
   });
 });
 

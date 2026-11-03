@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm"
 import { getDb, schema as s, type Db } from "./db";
 import type { CommentTarget, Role } from "./db/schema";
 import type { Itinerary } from "./itinerary";
+import { parseSettings, type UserSettings } from "./settings";
 
 export type { CommentTarget, Role };
 
@@ -17,6 +18,8 @@ export class NotFoundError extends Error {
 }
 export class ForbiddenError extends Error {}
 export class ConflictError extends Error {}
+/** Input the route couldn't check up front, e.g. an image's real size. */
+export class InvalidInputError extends Error {}
 
 const RANK: Record<Role, number> = { viewer: 1, editor: 2, owner: 3 };
 
@@ -36,6 +39,17 @@ const PRESENCE_MS = 10_000;
 export interface UserRef {
   id: string;
   name: string;
+}
+
+/** Someone with the trip open, with their profile photo if they have one. */
+export interface Viewer extends UserRef {
+  avatarUrl: string | null;
+}
+
+/** The signed-in user's own account, for the app and the settings page. */
+export interface Profile extends Viewer {
+  email: string;
+  settings: UserSettings;
 }
 
 export interface TripSummary {
@@ -145,6 +159,74 @@ export async function verifyCredentials(email: string, password: string): Promis
   const [user] = await db.select().from(s.users).where(eq(s.users.email, email.trim().toLowerCase()));
   const ok = await bcrypt.compare(password, user?.passwordHash ?? (await (dummyHash ??= bcrypt.hash("not-a-password", 12))));
   return user && ok ? { id: user.id, name: user.name, email: user.email } : null;
+}
+
+// ---------- Profile and settings ----------
+
+/** Largest profile photo accepted, decoded. The browser shrinks photos well below this. */
+const MAX_AVATAR_BYTES = 300 * 1024;
+const AVATAR_DATA_URL = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/;
+
+/** Where a photo is served. The version changes with the photo, so it can be cached for good. */
+const avatarUrl = (userId: string, updatedAt: Date | null) => (updatedAt ? `/api/avatars/${userId}?v=${updatedAt.getTime()}` : null);
+
+export async function getProfile(userId: string): Promise<Profile> {
+  const db = await getDb();
+  const [u] = await db
+    .select({ id: s.users.id, name: s.users.name, email: s.users.email, avatarUpdatedAt: s.users.avatarUpdatedAt, settings: s.users.settings })
+    .from(s.users)
+    .where(eq(s.users.id, userId));
+  if (!u) throw new NotFoundError("Account not found");
+  return { id: u.id, name: u.name, email: u.email, avatarUrl: avatarUrl(u.id, u.avatarUpdatedAt), settings: parseSettings(u.settings) };
+}
+
+export async function renameUser(userId: string, name: string): Promise<void> {
+  const db = await getDb();
+  await db.update(s.users).set({ name: name.trim() }).where(eq(s.users.id, userId));
+}
+
+/** The email is the sign-in name, so changing it takes the current password. */
+export async function changeEmail(userId: string, email: string, password: string): Promise<void> {
+  const db = await getDb();
+  const normalized = email.trim().toLowerCase();
+  const [u] = await db.select({ hash: s.users.passwordHash, email: s.users.email }).from(s.users).where(eq(s.users.id, userId));
+  if (!u) throw new NotFoundError("Account not found");
+  if (!(await bcrypt.compare(password, u.hash))) throw new ForbiddenError("That password isn't right.");
+  if (normalized === u.email) return;
+  const [taken] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, normalized));
+  if (taken) throw new ConflictError("An account with that email already exists.");
+  await db.update(s.users).set({ email: normalized }).where(eq(s.users.id, userId));
+}
+
+export async function saveSettings(userId: string, settings: UserSettings): Promise<UserSettings> {
+  const db = await getDb();
+  const clean = parseSettings(settings);
+  await db.update(s.users).set({ settings: clean }).where(eq(s.users.id, userId));
+  return clean;
+}
+
+/** Sets the profile photo from a data: URL (JPEG, PNG, or WebP), or removes it with null. Returns its new URL. */
+export async function setAvatar(userId: string, dataUrl: string | null): Promise<string | null> {
+  const db = await getDb();
+  if (dataUrl === null) {
+    await db.update(s.users).set({ avatar: null, avatarUpdatedAt: null }).where(eq(s.users.id, userId));
+    return null;
+  }
+  const m = AVATAR_DATA_URL.exec(dataUrl);
+  if (!m) throw new InvalidInputError("Upload a JPEG, PNG, or WebP image.");
+  if (Buffer.byteLength(m[2], "base64") > MAX_AVATAR_BYTES) throw new InvalidInputError("That image is too large.");
+  const now = new Date();
+  await db.update(s.users).set({ avatar: dataUrl, avatarUpdatedAt: now }).where(eq(s.users.id, userId));
+  return avatarUrl(userId, now);
+}
+
+/** A profile photo's bytes, for serving. */
+export async function getAvatar(userId: string): Promise<{ type: string; bytes: Buffer } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
+  const db = await getDb();
+  const [u] = await db.select({ avatar: s.users.avatar }).from(s.users).where(eq(s.users.id, userId));
+  const m = u?.avatar ? AVATAR_DATA_URL.exec(u.avatar) : null;
+  return m ? { type: m[1], bytes: Buffer.from(m[2], "base64") } : null;
 }
 
 // ---------- Trips ----------
@@ -285,26 +367,35 @@ export async function getTripView(userId: string, tripId: string): Promise<TripV
 }
 
 /** Cheap check collaborators poll to learn whether to refetch. */
-export async function getTripRevision(userId: string, tripId: string): Promise<{ revision: number; busy: UserRef | null; viewers: UserRef[] }> {
+export async function getTripRevision(userId: string, tripId: string): Promise<{ revision: number; busy: UserRef | null; viewers: Viewer[] }> {
   const { db, trip } = await tripAccess(userId, tripId);
-  let busy: UserRef | null = null;
+  const person = { id: s.users.id, name: s.users.name, avatarUpdatedAt: s.users.avatarUpdatedAt };
+  const toViewer = ({ avatarUpdatedAt, ...u }: { id: string; name: string; avatarUpdatedAt: Date | null }): Viewer => ({
+    ...u,
+    avatarUrl: avatarUrl(u.id, avatarUpdatedAt),
+  });
+  let busy: Viewer | null = null;
   if (lockIsLive(trip.turnStartedAt) && trip.turnUserId) {
-    [busy] = await db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.id, trip.turnUserId));
+    const [row] = await db.select(person).from(s.users).where(eq(s.users.id, trip.turnUserId));
+    busy = row ? toViewer(row) : null;
   }
   // Polling doubles as a heartbeat: record this user, then list who else is here.
   await db
     .insert(s.tripPresence)
     .values({ tripId, userId, seenAt: new Date() })
     .onConflictDoUpdate({ target: [s.tripPresence.tripId, s.tripPresence.userId], set: { seenAt: new Date() } });
-  const viewers = await db
-    .select({ id: s.users.id, name: s.users.name })
-    .from(s.tripPresence)
-    .innerJoin(s.users, eq(s.users.id, s.tripPresence.userId))
-    .where(and(eq(s.tripPresence.tripId, tripId), gt(s.tripPresence.seenAt, new Date(Date.now() - PRESENCE_MS))))
-    .orderBy(asc(s.users.name));
+  const viewers = (
+    await db
+      .select(person)
+      .from(s.tripPresence)
+      .innerJoin(s.users, eq(s.users.id, s.tripPresence.userId))
+      .where(and(eq(s.tripPresence.tripId, tripId), gt(s.tripPresence.seenAt, new Date(Date.now() - PRESENCE_MS))))
+      .orderBy(asc(s.users.name))
+  ).map(toViewer);
   // A tab streaming its own turn stops polling, but its user is still here.
   if (busy && !viewers.some((v) => v.id === busy.id)) viewers.push(busy);
-  return { revision: trip.revision, busy: busy ?? null, viewers: viewers.filter((v) => v.id !== userId) };
+  const busyRef = busy && { id: busy.id, name: busy.name };
+  return { revision: trip.revision, busy: busyRef, viewers: viewers.filter((v) => v.id !== userId) };
 }
 
 export async function renameTrip(userId: string, tripId: string, title: string): Promise<void> {

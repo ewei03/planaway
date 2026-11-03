@@ -4,7 +4,6 @@ import { anchorKey, money, safeUrl, type CommentAnchor, type CommentTarget, type
 import { CalendarIcon, CategoryIcon, CommentIcon, PlaneIcon, UsersIcon, WalletIcon, WeatherIcon } from "./icons";
 import { CoverPhotos, PlaceThumb, type PlaceLookup } from "./places";
 import { TipText } from "./TipText";
-import { dayColor } from "./TripMap";
 
 type Day = Itinerary["days"][number];
 
@@ -169,7 +168,7 @@ function DayCard({ day, currency, lookup, ...c }: { day: Day; currency: string; 
     <div className="day">
       <div className="day-head">
         <h4 className="day-heading">
-          <span className="day-dot" style={{ background: dayColor(day.day) }} aria-hidden="true" />
+          <span className="day-dot" aria-hidden="true" />
           <span className="day-num">Day {day.day}:</span> {day.title}
         </h4>
         <span className="day-meta">{[day.location, formatDay(day.date)].filter(Boolean).join(" · ")}</span>

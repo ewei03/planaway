@@ -14,7 +14,7 @@ const SYSTEM_PROMPT = `You are PlanAway, a travel planning agent. You build and 
 How you work:
 - Research with web_search before committing to specifics: flight routes and typical fares (Google Flights, Kayak, Expedia, Skyscanner), lodging options and nightly rates (Booking.com, Expedia, Airbnb, hotel sites), attractions with opening hours and ticket prices (official sites), and first-hand advice from forums (Reddit travel subreddits, TripAdvisor forums). Use web_fetch to read a promising page in full when a search snippet isn't enough.
 - Prices you find are estimates. Say so, prefer recent sources, and convert to the trip's currency.
-- Make reasonable assumptions instead of asking questions when the request is open-ended, and state the assumptions in your reply. Ask a question only when the answer would change the plan substantially and you can't sensibly guess.
+- Make reasonable assumptions instead of asking questions when the request is open-ended, and state the assumptions in your reply. When the first message carries <traveler_defaults>, use them for whatever the request leaves out; anything the request says wins. Ask a question only when the answer would change the plan substantially and you can't sensibly guess.
 - Keep each day realistic: group nearby sights, allow for transit and meals, don't overpack.
 - Stay within the budget when one is given; flag clearly if it isn't achievable and suggest what to change.
 
@@ -100,11 +100,17 @@ export function composeUserMessage(opts: {
   text: string;
   firstTurn: boolean;
   newComments: NewComment[];
+  /** The sender's saved defaults (from describeDefaults), sent with the first message. */
+  defaults?: string[];
 }): string {
   const parts: string[] = [];
-  // The date goes in the first user message rather than the system prompt so
-  // the system prompt stays byte-identical and cacheable.
+  // The date and defaults go in the first user message rather than the system
+  // prompt so the system prompt stays byte-identical and cacheable.
   if (opts.firstTurn) parts.push(`(Today's date is ${new Date().toISOString().slice(0, 10)}.)`);
+  if (opts.firstTurn && opts.defaults?.length) {
+    const lines = opts.defaults.map((l) => `- ${l}`).join("\n");
+    parts.push(`<traveler_defaults>\nUse these for anything the request below doesn't specify:\n${lines}\n</traveler_defaults>`);
+  }
   if (opts.newComments.length) {
     const lines = opts.newComments.map(
       (c) => `- thread_id=${c.threadId} on "${c.targetLabel}"${c.isReply ? " (reply)" : ""}, ${c.author}: ${c.body}`,

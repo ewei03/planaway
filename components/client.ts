@@ -34,6 +34,8 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
+  /** Profile photo; null shows their initial. */
+  avatarUrl?: string | null;
 }
 
 /** Something on the itinerary a comment can be attached to. */

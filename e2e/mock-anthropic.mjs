@@ -71,7 +71,7 @@ function streamMessage(res, { blocks, stop }) {
 }
 
 // ---------- Map and place stand-ins ----------
-// NOMINATIM_URL, WIKIDATA_URL, COMMONS_URL, and MAP_STYLE_URL
+// NOMINATIM_URL, PHOTON_URL, WIKIDATA_URL, COMMONS_URL, and MAP_STYLE_URL
 // point here in playwright.config.ts.
 
 const base = `http://localhost:${port}`;
@@ -120,6 +120,11 @@ function json(res, data, headers = {}) {
 function maps(req, res) {
   const url = new URL(req.url, base);
   if (url.pathname === "/search") return json(res, nominatim(url.searchParams.get("q") ?? "")), true;
+  // Photon type-ahead: one city named after whatever was typed.
+  if (url.pathname === "/api/") {
+    const q = url.searchParams.get("q") ?? "";
+    return json(res, { features: [{ properties: { osm_key: "place", osm_value: "city", name: `${q} City`, country: "Testland" } }] }), true;
+  }
   if (url.pathname === "/w/api.php" && url.searchParams.get("action") === "wbgetclaims") {
     const qid = url.searchParams.get("entity");
     return json(res, { claims: { P18: [{ mainsnak: { datavalue: { value: `Mock ${qid}.jpg` } } }] } }), true;

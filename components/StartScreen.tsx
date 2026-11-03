@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { areaQuery } from "@/lib/route";
+import { isCurrencyCode } from "@/lib/currencies";
+import type { TripDefaults } from "@/lib/settings";
+import { CurrencySelect } from "./CurrencySelect";
 import { ArrowRightIcon, DiceIcon, MenuIcon } from "./icons";
 import { credit, type PlaceLookup } from "./places";
 import { SiteFooter } from "./SiteFooter";
@@ -72,7 +75,6 @@ const INTERESTS = [
   ["family-friendly", "Family-friendly"],
 ] as const;
 
-const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "SGD"];
 
 interface BuildForm {
   origin: string;
@@ -99,6 +101,18 @@ const EMPTY_FORM: BuildForm = {
   destination: "",
   notes: "",
 };
+
+/** The empty form, with the user's saved defaults filled in where they have them. */
+function formFromDefaults(d: TripDefaults | undefined): BuildForm {
+  if (!d) return EMPTY_FORM;
+  return {
+    ...EMPTY_FORM,
+    origin: d.origin ?? EMPTY_FORM.origin,
+    travelers: d.travelers ? String(d.travelers) : EMPTY_FORM.travelers,
+    currency: d.currency && isCurrencyCode(d.currency) ? d.currency : EMPTY_FORM.currency,
+    pace: d.pace ?? EMPTY_FORM.pace,
+  };
+}
 
 /** Shared trip constraints: origin, party size, budget, length, timing. */
 function constraintLines(f: BuildForm): string[] {
@@ -188,6 +202,8 @@ interface Props {
   userName?: string;
   /** Place photos for the inspiration cards. */
   lookup?: PlaceLookup;
+  /** The user's saved trip defaults, which pre-fill the Plan it for me form. */
+  defaults?: TripDefaults;
   /** Destinations of the user's trips, which Surprise me steers away from. */
   pastDestinations?: string[];
   /** Title of the trip PlanAway is still planning; starting another waits for it. */
@@ -195,10 +211,10 @@ interface Props {
   onOpenBusy?: () => void;
 }
 
-export function StartScreen({ onStart, onOpenSidebar, userName, lookup, pastDestinations = [], busyWith = null, onOpenBusy }: Props) {
+export function StartScreen({ onStart, onOpenSidebar, userName, lookup, defaults, pastDestinations = [], busyWith = null, onOpenBusy }: Props) {
   const [tab, setTab] = useState<"idea" | "build">("idea");
   const [idea, setIdea] = useState("");
-  const [form, setForm] = useState<BuildForm>(EMPTY_FORM);
+  const [form, setForm] = useState<BuildForm>(() => formFromDefaults(defaults));
   const [starting, setStarting] = useState(false);
   // Set after mount: the server doesn't know the viewer's time of day.
   const [hello, setHello] = useState("Welcome back");
@@ -294,10 +310,22 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup, pastDest
               placeholder="e.g. 10 days in Japan next April for two, Tokyo and Kyoto, love food and design, about $6,000 total from San Francisco"
             />
             <div className="form-actions">
+              <button
+                className="btn surprise big"
+                type="button"
+                disabled={starting || Boolean(busyWith)}
+                // No form here, so the trip starts from the saved defaults alone.
+                onClick={() => start(surprisePrompt(formFromDefaults(defaults), pickSurpriseTheme(), pastDestinations))}
+              >
+                <DiceIcon /> Surprise me!
+              </button>
               <button className="btn primary big" type="submit" disabled={starting || Boolean(busyWith)}>
-                Plan this trip <ArrowRightIcon size={16} />
+                Plan my trip <ArrowRightIcon size={16} />
               </button>
             </div>
+            {/* <p className="hint muted">
+              No idea yet? <b>Surprise me!</b> picks a destination at random and plans the whole trip, using your trip defaults from Settings.
+            </p> */}
           </form>
         ) : (
           <form className="card" onSubmit={submitBuild}>
@@ -314,11 +342,7 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup, pastDest
                 <label htmlFor="b-budget">Total budget</label>
                 <div className="inline">
                   <input id="b-budget" type="number" min={0} step={100} placeholder="3000" value={form.budget} onChange={(e) => set("budget", e.target.value)} />
-                  <select aria-label="Currency" value={form.currency} onChange={(e) => set("currency", e.target.value)}>
-                    {CURRENCIES.map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </select>
+                  <CurrencySelect codeOnly aria-label="Currency" value={form.currency} onChange={(e) => set("currency", e.target.value)} />
                 </div>
               </div>
               <div>
@@ -368,14 +392,10 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup, pastDest
             />
 
             <div className="form-actions">
-              <button className="btn surprise big" type="button" disabled={starting || Boolean(busyWith)} onClick={() => start(surprisePrompt(form, pickSurpriseTheme(), pastDestinations))}>
-                <DiceIcon /> Surprise me!
-              </button>
               <button className="btn primary big" type="submit" disabled={starting || Boolean(busyWith)}>
                 Build my trip <ArrowRightIcon size={16} />
               </button>
             </div>
-            <p className="hint muted"><b>Surprise me!</b> picks a destination at random, using only the origin, budget, and dates you filled in.</p>
           </form>
         )}
 
