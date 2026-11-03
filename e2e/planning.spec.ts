@@ -32,7 +32,7 @@ test("plan a trip with the agent and see the itinerary", async ({ page }) => {
 
 test("a failed agent turn shows an error and saves nothing", async ({ page }) => {
   await page.getByLabel("Your trip idea").fill("FAIL please");
-  await page.getByRole("button", { name: "Plan this trip" }).click();
+  await page.getByRole("button", { name: "Plan my trip" }).click();
   await expect(page.locator(".msg.error")).toContainText("Anthropic API error 400");
   await expect(page.getByText(/No itinerary yet/)).toBeVisible();
   await page.reload();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { areaQuery } from "@/lib/route";
 import { isCurrencyCode } from "@/lib/currencies";
 import type { TripDefaults } from "@/lib/settings";
@@ -405,8 +405,8 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup, defaults
             <span className="muted small">Pick one to start from it</span>
           </div>
           <div className="inspiration-grid">
-            {INSPIRATION.map((i) => (
-              <InspirationCard key={i.place} idea={i} lookup={lookup} onPick={() => pickInspiration(i.prompt)} />
+            {INSPIRATION.map((i, n) => (
+              <InspirationCard key={i.place} idea={i} order={n} lookup={lookup} onPick={() => pickInspiration(i.prompt)} />
             ))}
           </div>
         </section>
@@ -416,11 +416,22 @@ export function StartScreen({ onStart, onOpenSidebar, userName, lookup, defaults
   );
 }
 
-function InspirationCard({ idea, lookup, onPick }: { idea: (typeof INSPIRATION)[number]; lookup?: PlaceLookup; onPick: () => void }) {
+function InspirationCard({
+  idea,
+  order,
+  lookup,
+  onPick,
+}: {
+  idea: (typeof INSPIRATION)[number];
+  /** Position in the grid, which staggers the cards' fade-in. */
+  order: number;
+  lookup?: PlaceLookup;
+  onPick: () => void;
+}) {
   const [broken, setBroken] = useState(false);
   const photo = lookup?.(areaQuery(idea.place))?.photos[0];
   return (
-    <button type="button" className="inspiration-card" onClick={onPick}>
+    <button type="button" className="inspiration-card" style={{ "--i": order } as CSSProperties} onClick={onPick}>
       <span className="inspiration-photo" style={{ background: idea.tint }} title={photo && !broken ? credit(photo) : undefined}>
         {photo && !broken ? <img src={photo.thumb} alt="" loading="lazy" onError={() => setBroken(true)} /> : <span aria-hidden="true">{idea.place}</span>}
       </span>

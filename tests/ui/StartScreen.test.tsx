@@ -15,7 +15,7 @@ describe("StartScreen", () => {
   it("sends a free-form idea", async () => {
     const { onStart } = setup();
     await userEvent.type(screen.getByLabelText("Your trip idea"), "  10 days in Japan  ");
-    await userEvent.click(screen.getByRole("button", { name: "Plan this trip" }));
+    await userEvent.click(screen.getByRole("button", { name: "Plan my trip" }));
     expect(onStart).toHaveBeenCalledWith("10 days in Japan");
   });
 
@@ -99,7 +99,7 @@ describe("StartScreen", () => {
     const onStart = vi.fn(() => new Promise<void>((r) => (finish = r)));
     render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} />);
     await userEvent.type(screen.getByLabelText("Your trip idea"), "Paris");
-    const button = screen.getByRole("button", { name: "Plan this trip" });
+    const button = screen.getByRole("button", { name: "Plan my trip" });
     await userEvent.click(button);
     expect(button).toBeDisabled();
     finish();
@@ -112,7 +112,7 @@ describe("StartScreen", () => {
     const onOpenBusy = vi.fn();
     render(<StartScreen onStart={onStart} onOpenSidebar={vi.fn()} busyWith="Lisbon" onOpenBusy={onOpenBusy} />);
     expect(screen.getByRole("status")).toHaveTextContent("PlanAway is still working on “Lisbon”");
-    expect(screen.getByRole("button", { name: "Plan this trip" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Plan my trip" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "View progress" }));
     expect(onOpenBusy).toHaveBeenCalled();
   });

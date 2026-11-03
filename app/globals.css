@@ -489,7 +489,7 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 }
 
 /* Tips and sources: boxed apart from the plan. */
-.info-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 18px; overflow: hidden; }
+.info-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 18px; overflow: clip; }
 /* The header is the toggle: a full-width button inside the heading. */
 .info-box-head { margin: 0; }
 .info-box-head button {
@@ -513,7 +513,8 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 /* Animate height by moving the row between 0fr and 1fr. */
 .info-box-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.22s ease; }
 .info-box.open .info-box-body { grid-template-rows: 1fr; }
-.info-box-inner { overflow: hidden; min-height: 0; }
+/* clip, not hidden: hidden would make each box its own scroller and stop the scroll-linked fade-ins inside it. */
+.info-box-inner { overflow: clip; min-height: 0; }
 /* Margins rather than padding, so a collapsed row really is zero height. */
 .info-box-inner > .tip-list { margin: 2px 16px 16px; }
 .info-box-inner > .source-list { margin: 0 10px 12px; }
@@ -926,4 +927,62 @@ a.btn.block { display: block; }
   .cover-inset { width: 72px; }
   .cover-inset img { height: 44px; }
   .map-canvas { height: 280px; }
+}
+
+/* ---------- Motion ----------
+   Small and quick, and off for anyone who asks their device for reduced motion.
+   Scroll-linked effects use CSS scroll timelines where the browser has them;
+   elsewhere the content simply shows, without animation. */
+/* These move things with translate and scale, not transform, so hover effects that use transform still work. */
+@keyframes fade-up { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; translate: 0 -4px; scale: 0.98; } to { opacity: 1; translate: none; scale: none; } }
+@keyframes rise-in { from { opacity: 0; translate: 0 8px; scale: 0.985; } to { opacity: 1; translate: none; scale: none; } }
+@keyframes reveal-in { from { opacity: 0; translate: 0 24px; } to { opacity: 1; translate: none; } }
+@keyframes reveal-out { from { opacity: 1; translate: none; } to { opacity: 0.15; translate: 0 -8px; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+
+  /* Pages settle in on load, top to bottom. */
+  .info-header, .info-inner > h1, .info-intro, .info-inner > .muted, .info-body,
+  .start-inner > .eyebrow, .start-inner > h1, .start-inner > .start-lede, .start-inner > .tabs, .start-inner > form,
+  .settings-inner > * {
+    animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .info-inner > h1, .start-inner > h1, .settings-inner > :nth-child(2) { animation-delay: 60ms; }
+  .info-intro, .start-inner > .start-lede, .settings-inner > :nth-child(3) { animation-delay: 120ms; }
+  .info-inner > .muted, .start-inner > .tabs, .settings-inner > :nth-child(4) { animation-delay: 180ms; }
+  .info-body, .start-inner > form, .settings-inner > :nth-child(n + 5) { animation-delay: 240ms; }
+
+  /* Inspiration cards arrive one after another. */
+  .inspiration-card { animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(300ms + var(--i, 0) * 50ms); }
+
+  /* An opened Help answer fades in rather than snapping open. */
+  .faq[open] > p { animation: fade-in 0.3s ease-out; }
+
+  /* Chat messages, menus, and dialogs. */
+  .msg-wrap, .messages > .msg { animation: rise-in 0.3s ease-out both; }
+  .menu-list { animation: pop-in 0.14s ease-out; transform-origin: top right; }
+  .dialog[open] { animation: rise-in 0.2s ease-out; }
+  .dialog[open]::backdrop { animation: fade-in 0.2s ease-out; }
+
+  .about-steps li, .contact-reasons li { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+  .about-steps li:hover, .contact-reasons li:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+
+  @supports (animation-timeline: view()) {
+    /* Footer pages: sections fade in as they scroll up into view, and fade gently as they leave the top. */
+    .info-body > section, .info-body > nav, .about-steps li, .contact-reasons li, .about-cta {
+      /* reveal-out fills forwards only: filling backwards would hold full opacity over reveal-in. */
+      animation: reveal-in linear both, reveal-out linear forwards;
+      animation-timeline: view(), view();
+      animation-range: entry 0% entry 70%, exit 50% exit 100%;
+    }
+    /* Itinerary: sections and days fade in as you scroll down to them. */
+    .itinerary .info-box, .itinerary .day {
+      animation: reveal-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 50%;
+    }
+  }
 }

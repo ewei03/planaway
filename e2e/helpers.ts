@@ -51,7 +51,7 @@ export async function planTrip(page: Page, idea = "A food weekend in Kyoto for t
   // the click submits the form natively. (Matters right after a cold start.)
   await waitForHydration(page, "#idea-text");
   await page.getByLabel("Your trip idea").fill(idea);
-  await page.getByRole("button", { name: "Plan this trip" }).click();
+  await page.getByRole("button", { name: "Plan my trip" }).click();
   // The chat header takes the itinerary's title once the turn is saved. (On
   // phones the itinerary pane itself is hidden until opened.)
   // Generous: the first run after a fresh build compiles the routes on demand.
