@@ -1,7 +1,18 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { normalizeQuery, placeQueries, type Place, type PlaceLookup, type PlacePhoto } from "@/lib/route";
+import {
+  dayPath,
+  legKey,
+  normalizeQuery,
+  placeQueries,
+  type Leg,
+  type LegLookup,
+  type Place,
+  type PlaceLookup,
+  type PlacePhoto,
+  type Route,
+} from "@/lib/route";
 import { api, safeUrl, type Itinerary } from "./client";
 
 export type { Place, PlaceLookup, PlacePhoto };
@@ -70,6 +81,56 @@ export function usePlaceQueries(queries: string[]): { lookup: PlaceLookup; loadi
 
   const lookup = useCallback<PlaceLookup>((q) => found.get(normalizeQuery(q)), [found]);
   return { lookup, loading: missing.length > 0 };
+}
+
+// ---------- Travel between stops ----------
+
+/**
+ * Street routes between each day's stops, for the map and the timeline's
+ * travel times. Like places, the server routes a few days at a time (the free
+ * routing servers ask for fair use), so this keeps asking until every leg is
+ * in. Legs accumulate across revisions; a changed stop refetches only its own.
+ */
+export function useLegs(route: Route): { legs: LegLookup; loading: boolean } {
+  const [found, setFound] = useState<Map<string, Leg | null>>(() => new Map());
+  const failed = useRef(new Set<string>());
+
+  const sequences = route.days.map(dayPath).filter((seq) => seq.length > 1);
+  const pending = sequences.filter((seq) => seq.slice(1).some((to, i) => !found.has(legKey(seq[i], to)) && !failed.current.has(legKey(seq[i], to))));
+  const pendingKey = JSON.stringify(pending.map((seq) => seq.map((p) => [p.lat, p.lng])));
+
+  useEffect(() => {
+    if (pendingKey === "[]") return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const batch = JSON.parse(pendingKey) as [number, number][][];
+      try {
+        const { legs } = await api<{ legs: Record<string, Leg | null> }>("/api/routes", {
+          method: "POST",
+          body: JSON.stringify({ sequences: batch }),
+        });
+        if (cancelled) return;
+        // Nothing new means the server can't route these; stop asking.
+        if (Object.keys(legs).every((k) => found.has(k))) throw new Error("no progress");
+        setFound((prev) => new Map([...prev, ...Object.entries(legs)]));
+      } catch {
+        if (cancelled) return;
+        for (const seq of batch)
+          for (let i = 1; i < seq.length; i++)
+            failed.current.add(legKey({ lat: seq[i - 1][0], lng: seq[i - 1][1] }, { lat: seq[i][0], lng: seq[i][1] }));
+        setFound((prev) => new Map(prev));
+      }
+    }, DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // `found` is read only to spot a call that added nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingKey]);
+
+  const legs = useCallback<LegLookup>((from, to) => found.get(legKey(from, to)), [found]);
+  return { legs, loading: pending.length > 0 };
 }
 
 // ---------- Photos ----------

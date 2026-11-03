@@ -1,7 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ItineraryView } from "@/components/ItineraryView";
+import { createMapFocus, MapFocusProvider } from "@/components/mapFocus";
+import type { LegLookup } from "@/lib/route";
 import { fullLookup, sampleItinerary } from "../fixtures";
 
 function setup(counts = new Map<string, number>(), itinerary = sampleItinerary()) {
@@ -196,5 +198,77 @@ describe("ItineraryView", () => {
   it("shows the nightly price with a quieter unit", () => {
     setup();
     expect(screen.getByText("/ night", { exact: false })).toHaveClass("price-unit");
+  });
+});
+
+describe("stops and the map", () => {
+  // 900 m on foot between any two different places.
+  const legs: LegLookup = (a, b) => (a.lat === b.lat && a.lng === b.lng ? null : { mode: "walk", meters: 900, seconds: 660, path: [] });
+
+  function setupMap() {
+    const focus = createMapFocus();
+    render(
+      <MapFocusProvider value={focus}>
+        <ItineraryView itinerary={sampleItinerary()} counts={new Map()} onComment={vi.fn()} lookup={fullLookup()} legs={legs} map={<div />} />
+      </MapFocusProvider>,
+    );
+    return focus;
+  }
+
+  it("numbers each mapped stop like its pin, in the day's color", () => {
+    setupMap();
+    const badge = screen.getByRole("button", { name: "Stop 2: show Pontocho dinner on the map" });
+    expect(badge).toHaveTextContent("2");
+    expect(badge.closest("li")).toHaveStyle({ "--day": "#0f6e63" });
+    expect(screen.getByRole("button", { name: "Stop 1: show Todai-ji on the map" }).closest("li")).toHaveStyle({ "--day": "#c2410c" });
+  });
+
+  it("has no stop badges before places are known", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: /^Stop \d/ })).toBeNull();
+  });
+
+  it("picks stops for the map, docking it, and marks them in the timeline", async () => {
+    const focus = setupMap();
+    const nishiki = screen.getByRole("button", { name: "Stop 1: show Nishiki Market on the map" });
+    await userEvent.click(nishiki);
+    expect(focus.get()).toEqual({ day: 1, range: { day: 1, from: 1, to: 1 }, docked: true });
+    expect(nishiki).toHaveAttribute("aria-pressed", "true");
+    expect(nishiki.closest("li")).toHaveClass("picked");
+
+    await userEvent.click(screen.getByRole("button", { name: "Stop 2: show Pontocho dinner on the map" }));
+    expect(focus.get().range).toEqual({ day: 1, from: 1, to: 2 });
+    expect(screen.getByRole("button", { name: "Stop 2: show Pontocho dinner on the map" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows how to get to the next stop, and picks that leg on click", async () => {
+    const focus = setupMap();
+    const leg = screen.getByRole("button", { name: "🚶 11 min · 900 m to Pontocho dinner: show the way on the map" });
+    expect(leg).toHaveTextContent("🚶 11 min · 900 m");
+    // The last stop of a day has nowhere to go.
+    expect(screen.queryByRole("button", { name: /to Todai-ji/ })).toBeNull();
+    await userEvent.click(leg);
+    expect(focus.get().range).toEqual({ day: 1, from: 1, to: 2 });
+    expect(leg).toHaveClass("picked");
+  });
+
+  it("follows picks made on the map", () => {
+    const focus = setupMap();
+    act(() => focus.pick({ day: 2, from: 1, to: 1 }));
+    expect(screen.getByRole("button", { name: "Stop 1: show Todai-ji on the map" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Stop 1: show Nishiki Market on the map" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("keeps the docked route open, and its header undocks it", async () => {
+    const focus = setupMap();
+    const head = screen.getByRole("button", { name: "Route" });
+    await userEvent.click(head);
+    expect(head).toHaveAttribute("aria-expanded", "false");
+    act(() => focus.setDocked(true));
+    expect(head).toHaveAttribute("aria-expanded", "true");
+    expect(head.closest("section")).toHaveClass("stuck");
+    await userEvent.click(head);
+    expect(focus.get().docked).toBe(false);
+    expect(head.closest("section")).not.toHaveClass("stuck");
   });
 });

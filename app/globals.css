@@ -180,20 +180,35 @@ a { color: var(--accent); }
 
 /* Buttons and inputs */
 .btn {
-  border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); background-color: var(--surface); color: var(--text);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.025));
   border-radius: 10px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer;
   white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease, filter 0.15s ease;
 }
+.btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 4px rgba(0, 0, 0, 0.06), 0 6px 14px rgba(0, 0, 0, 0.07); }
+.btn:active:not(:disabled) { transform: translateY(0); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12); }
 .btn svg { flex: none; }
 .btn.big { min-height: 44px; padding: 10px 20px; border-radius: 12px; }
 .btn.surprise { color: var(--coral); }
-.btn.surprise:hover { background: var(--coral-soft); }
-.new-trip { min-height: 44px; border-radius: 12px; }
-.btn:hover { background: var(--surface-2); }
+.btn.surprise:hover { background-color: var(--coral-soft); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 4px rgba(0, 0, 0, 0.05), 0 6px 14px color-mix(in srgb, var(--coral), transparent 82%); }
+/* The icon and label are centred as a group; pad the right by the icon and gap so the label itself is centred. */
+.new-trip { min-height: 44px; border-radius: 12px; padding-right: 40px; }
+.btn:hover { background-color: var(--surface-2); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.btn.primary:hover { filter: brightness(1.08); }
-.btn.ghost { background: transparent; }
+.btn.primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent), #fff 10%), var(--accent));
+  border-color: color-mix(in srgb, var(--accent), #000 12%); color: var(--accent-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 12px color-mix(in srgb, var(--accent), transparent 78%);
+}
+.btn.primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 4px rgba(0, 0, 0, 0.12), 0 8px 20px color-mix(in srgb, var(--accent), transparent 70%);
+}
+.btn.primary:active:not(:disabled), .btn.danger-fill:active:not(:disabled) { filter: brightness(0.97); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15); }
+@media (prefers-reduced-motion: reduce) { .btn, .btn:hover:not(:disabled) { transform: none; transition: none; } }
+.btn.ghost { background: transparent; box-shadow: none; }
 .btn.block { width: 100%; display: flex; }
 .btn.icon { padding: 6px 10px; }
 .btn.danger-text { color: var(--danger); }
@@ -369,9 +384,9 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .version-picker:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
 .version-picker svg:last-child { color: var(--muted); flex: none; pointer-events: none; }
 .version-picker.saved { background: var(--coral-soft); color: var(--coral); }
-.btn.soft { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
-.btn.soft:hover { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
-.btn.soft:disabled:hover { background: var(--accent-soft); }
+.btn.soft { background-color: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.btn.soft:hover { background-color: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+.btn.soft:disabled:hover { background-color: var(--accent-soft); }
 .count-badge {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
   background: var(--coral); color: var(--on-coral); font-size: 12px; font-weight: 700; line-height: 1;
@@ -734,8 +749,12 @@ a.source:hover .source-arrow { color: var(--accent); transform: translate(2px, -
 .small-dialog p { margin: 0; font-size: 14px; }
 .small-dialog label { margin-top: 8px; }
 .dialog-actions { margin-top: 14px; }
-.btn.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
-.btn.danger-fill:hover { filter: brightness(1.08); }
+.btn.danger-fill {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--danger), #fff 10%), var(--danger));
+  border-color: color-mix(in srgb, var(--danger), #000 12%); color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 12px color-mix(in srgb, var(--danger), transparent 80%);
+}
+.btn.danger-fill:hover:not(:disabled) { filter: brightness(1.06); }
 
 /* Site footer: full at the bottom of the start and auth pages, compact in the sidebar */
 .site-footer {
@@ -939,7 +958,53 @@ a.btn.block { display: block; }
 .maplibregl-map { font-family: inherit; }
 .map-info img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; margin-bottom: 4px; }
 .map-info-sub { color: #6b6860; }
-.map-info a { color: #0f6e63; }
+.map-info a, .map-info .link-btn { color: #0f6e63; font-size: 13px; }
+.map-info-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; }
+/* Marker positions are set with transform, so emphasis uses scale and opacity instead. */
+.map-pin { cursor: pointer; transition: scale 0.15s ease, opacity 0.15s ease; }
+.map-pin.dim { opacity: 0.4; }
+.map-pin.hover { scale: 1.3; z-index: 2; }
+.map-leg {
+  pointer-events: none; white-space: nowrap; padding: 2px 7px; border-radius: 999px;
+  background: #fff; color: #1d1c1a; font: 600 11px/1.3 system-ui, sans-serif; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.map-toolbar { display: flex; align-items: flex-start; gap: 6px 8px; flex-wrap: wrap; }
+.map-dock { margin-left: auto; white-space: nowrap; }
+/* Under the map, not over it: a docked map is short, and an overlay would cover pins and popups. */
+.map-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px;
+  padding: 7px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px;
+}
+.map-summary-text { display: flex; flex-direction: column; min-width: 0; }
+.map-summary-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-summary-text span { color: var(--muted); }
+/* Docked: the route stays at the top of the itinerary while it scrolls, a little shorter. */
+/* Up against the scroller's top edge, past its padding, so nothing scrolls by above it. */
+.itinerary > .info-box.stuck { position: sticky; top: -20px; z-index: 4; box-shadow: var(--shadow-lg); }
+.info-box.stuck .map-canvas { height: clamp(180px, 34vh, 280px); }
+/* Docked, the map is short: popups leave out the photo (the timeline has it) so they fit. */
+.info-box.stuck .map-info img { display: none; }
+
+/* Timeline stops: badges in the day's color, matching the map's pins. */
+.stop-badge {
+  display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; cursor: pointer;
+  border: 2px solid var(--day); background: transparent; color: var(--day); font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1;
+}
+.stop-badge:hover { background: color-mix(in srgb, var(--day) 14%, transparent); }
+.stop-badge[aria-pressed="true"] { background: var(--day); color: #fff; }
+.stop-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.act-card { transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.act.map-hover .act-card { border-color: var(--day); }
+.act.picked .act-card { border-color: var(--day); box-shadow: 0 0 0 1px var(--day); }
+.act.flash .act-card { animation: stop-flash 1.5s ease; }
+@keyframes stop-flash { 0%, 40% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--day) 45%, transparent); } }
+/* The way to the next stop, between the cards. */
+.act-leg {
+  grid-column: 3; justify-self: start; margin: -2px 0 6px; padding: 2px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px dashed var(--border); background: transparent; color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1.5;
+}
+.act-leg:hover { border-color: var(--day); color: var(--text); }
+.act-leg.picked { border-style: solid; border-color: var(--day); background: color-mix(in srgb, var(--day) 12%, transparent); color: var(--text); }
 
 @media (max-width: 1100px) {
   .comments-panel { position: absolute; inset: 0; width: auto; z-index: 5; border-left: 0; }
@@ -961,6 +1026,7 @@ a.btn.block { display: block; }
   .start { padding: 24px 16px 0; }
   .grid { grid-template-columns: 1fr; }
   .messages, .itinerary { padding: 16px; }
+  .itinerary > .info-box.stuck { top: -16px; }
   .chat-header, .composer { padding-left: 16px; padding-right: 16px; }
   /* The time moves above each card, beside the icon. */
   .act { grid-template-columns: 36px minmax(0, 1fr); column-gap: 10px; }
@@ -968,6 +1034,7 @@ a.btn.block { display: block; }
   .act-icon { grid-column: 1; grid-row: 1 / span 2; }
   .act-time { grid-column: 2; padding: 8px 0 0; text-align: left; }
   .act-card { grid-column: 2; flex-wrap: wrap; }
+  .act-leg { grid-column: 2; }
   .it-card { padding: 18px; }
   .it-card.over-cover { margin: -48px 0 22px; }
   .toolbar-actions .btn { padding: 6px 10px; }
@@ -1035,6 +1102,8 @@ a.btn.block { display: block; }
       animation-timeline: view();
       animation-range: entry 0% entry 50%;
     }
+    /* Docked, it never leaves view; a scroll-linked fade would only flicker. */
+    .itinerary > .info-box.stuck { animation: none; }
   }
 }
 

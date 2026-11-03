@@ -111,6 +111,19 @@ function nominatim(q) {
   ];
 }
 
+/** OSRM routing: a straight line per leg at 1.3× the distance, walked at 1.3 m/s or driven at 10 m/s. */
+function osrm(profile, coords) {
+  const pts = coords.split(";").map((c) => c.split(",").map(Number));
+  const rad = Math.PI / 180;
+  const metres = ([lng1, lat1], [lng2, lat2]) =>
+    2 * 6_371_000 * Math.asin(Math.sqrt(Math.sin(((lat2 - lat1) * rad) / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(((lng2 - lng1) * rad) / 2) ** 2));
+  const legs = pts.slice(1).map((b, i) => {
+    const distance = metres(pts[i], b) * 1.3;
+    return { distance, duration: distance / (profile === "foot" ? 1.3 : 10), steps: [{ geometry: { coordinates: [pts[i], b] } }] };
+  });
+  return { code: "Ok", routes: [{ legs }] };
+}
+
 function json(res, data, headers = {}) {
   res.writeHead(200, { "content-type": "application/json", ...headers });
   res.end(JSON.stringify(data));
@@ -147,6 +160,8 @@ function maps(req, res) {
     return true;
   }
   if (url.pathname === "/style.json") return json(res, STYLE, { "access-control-allow-origin": "*" }), true;
+  const route = /^\/routed-(foot|car)\/route\/v1\/driving\/(.+)$/.exec(url.pathname);
+  if (route) return json(res, osrm(route[1], decodeURIComponent(route[2]))), true;
   return false;
 }
 

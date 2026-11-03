@@ -1,7 +1,8 @@
-import { createContext, memo, useContext, useEffect, useId, useState, type ReactNode } from "react";
-import { activityQuery, heroPhotos, lodgingQuery } from "@/lib/route";
+import { createContext, memo, useContext, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
+import { activityQuery, dayColor, heroPhotos, legLabel, lodgingQuery, type Leg, type LegLookup } from "@/lib/route";
 import { anchorKey, money, safeUrl, type CommentAnchor, type CommentTarget, type Itinerary } from "./client";
 import { CalendarIcon, CategoryIcon, CommentIcon, PlaneIcon, UsersIcon, WalletIcon, WeatherIcon } from "./icons";
+import { pickStop, useFocusValue, useMapFocus } from "./mapFocus";
 import { CoverPhotos, PlaceThumb, type Place, type PlaceLookup } from "./places";
 import { TipText } from "./TipText";
 
@@ -78,6 +79,8 @@ function InfoBox({
   title,
   count,
   tone,
+  stuck = false,
+  onUnstick,
   children,
 }: {
   id: string;
@@ -85,15 +88,24 @@ function InfoBox({
   title: string;
   count?: number;
   tone?: "tips";
+  /** Kept in view at the top while the itinerary scrolls (the docked map); always open, and its header undocks it. */
+  stuck?: boolean;
+  onUnstick?: () => void;
   children: ReactNode;
 }) {
-  const [open, toggle] = useRememberedOpen(id);
+  const [remembered, toggle] = useRememberedOpen(id);
+  const open = remembered || stuck;
   const bodyId = useId();
 
   return (
-    <section className={`info-box ${tone ? `info-box-${tone}` : ""} ${open ? "open" : ""}`}>
+    <section className={`info-box ${tone ? `info-box-${tone}` : ""} ${open ? "open" : ""} ${stuck ? "stuck" : ""}`}>
       <h3 className="info-box-head">
-        <button aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+        <button
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={stuck ? onUnstick : toggle}
+          title={stuck ? "Stop keeping the map in view" : undefined}
+        >
           <span className="info-box-icon" aria-hidden="true">
             {icon}
           </span>
@@ -168,6 +180,8 @@ type DayCardProps = {
   currency: string;
   /** Each activity's place, in order; undefined until it's been looked up. */
   places: (Place | null | undefined)[];
+  /** From each mapped activity to the next mapped one; undefined where there's none or it isn't routed yet. */
+  legs: (Leg | null | undefined)[];
 } & CommentProps;
 
 /**
@@ -175,7 +189,19 @@ type DayCardProps = {
  * is open, so a day redraws only when one of its own places, or something else
  * it shows, has changed; redrawing every day for each batch was the slow part.
  */
-const DayCard = memo(function DayCard({ day, currency, places, ...c }: DayCardProps) {
+const DayCard = memo(function DayCard({ day, currency, places, legs, ...c }: DayCardProps) {
+  const focus = useMapFocus();
+  // Only this day's picked stops, as a string, so picking on another day doesn't redraw this one.
+  const picked = useFocusValue((s) => (s.range?.day === day.day ? `${s.range.from}-${s.range.to}` : ""));
+  const [from, to] = picked ? picked.split("-").map(Number) : [0, -1];
+  // Stop numbers match the map's: mapped activities only, counted in order.
+  let n = 0;
+  const orders = places.map((p) => (p ? ++n : null));
+  const style = { "--day": dayColor(day.day) } as CSSProperties;
+  // From the timeline, the map docks so the picked stops stay in sight.
+  const pick = (a: number, b: number) =>
+    focus.pick(a === b ? pickStop(focus.get().range, day.day, a) : { day: day.day, from: a, to: b }, { dock: true });
+
   return (
     <div className="day">
       <div className="day-head">
@@ -185,29 +211,62 @@ const DayCard = memo(function DayCard({ day, currency, places, ...c }: DayCardPr
         <span className="day-meta">{[day.location, formatDay(day.date)].filter(Boolean).join(" · ")}</span>
       </div>
       <ol className="timeline">
-        {day.activities.map((a, i) => (
-          <li className="act" key={a.id || i}>
-            <div className="act-time">{a.time ?? ""}</div>
-            <span className={`act-icon cat-${a.category}`} role="img" aria-label={a.category} title={a.category}>
-              <CategoryIcon category={a.category} size={17} />
-            </span>
-            <div className="act-card">
-              <div className="act-body">
-                <PlaceThumb place={places[i]} label={a.name} />
-                <div>
-                  <div className="act-name">
-                    <Link text={a.name} url={a.url} />
+        {day.activities.map((a, i) => {
+          const order = orders[i];
+          const isPicked = order !== null && order >= from && order <= to;
+          const leg = order !== null ? legs[i] : undefined;
+          const next = order !== null ? day.activities.find((_, j) => j > i && orders[j] !== null) : undefined;
+          return (
+            <li
+              className={`act ${isPicked ? "picked" : ""}`}
+              key={a.id || i}
+              style={order !== null ? style : undefined}
+              data-stop={order !== null ? a.id : undefined}
+              onMouseEnter={order !== null ? () => focus.hover(a.id) : undefined}
+              onMouseLeave={order !== null ? () => focus.hover(null) : undefined}
+            >
+              <div className="act-time">{a.time ?? ""}</div>
+              <span className={`act-icon cat-${a.category}`} role="img" aria-label={a.category} title={a.category}>
+                <CategoryIcon category={a.category} size={17} />
+              </span>
+              <div className="act-card">
+                <div className="act-body">
+                  <PlaceThumb place={places[i]} label={a.name} />
+                  <div>
+                    <div className="act-name">
+                      <Link text={a.name} url={a.url} />
+                    </div>
+                    <div className="act-desc">{a.description}</div>
                   </div>
-                  <div className="act-desc">{a.description}</div>
+                </div>
+                <div className="act-side">
+                  {order !== null && (
+                    <button
+                      className="stop-badge"
+                      aria-pressed={isPicked}
+                      aria-label={`Stop ${order}: show ${a.name} on the map`}
+                      title="Show on the map. Pick another stop to see the way between them."
+                      onClick={() => pick(order, order)}
+                    >
+                      {order}
+                    </button>
+                  )}
+                  <span className="row-price">{money(a.est_cost, currency)}</span>
+                  <CommentButton type="activity" id={a.id} label={`Day ${day.day} · ${a.name}`} {...c} />
                 </div>
               </div>
-              <div className="act-side">
-                <span className="row-price">{money(a.est_cost, currency)}</span>
-                <CommentButton type="activity" id={a.id} label={`Day ${day.day} · ${a.name}`} {...c} />
-              </div>
-            </div>
-          </li>
-        ))}
+              {leg && leg.meters > 0 && next && (
+                <button
+                  className={`act-leg ${isPicked && order! + 1 <= to ? "picked" : ""}`}
+                  aria-label={`${legLabel(leg)} to ${next.name}: show the way on the map`}
+                  onClick={() => pick(order!, order! + 1)}
+                >
+                  {legLabel(leg)}
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );
@@ -283,7 +342,9 @@ function sameDay(a: DayCardProps, b: DayCardProps): boolean {
     a.counts === b.counts &&
     a.onComment === b.onComment &&
     a.places.length === b.places.length &&
-    a.places.every((p, i) => p === b.places[i])
+    a.places.every((p, i) => p === b.places[i]) &&
+    a.legs.length === b.legs.length &&
+    a.legs.every((l, i) => l === b.legs[i])
   );
 }
 
@@ -292,17 +353,31 @@ function lookupActivity(lookup: PlaceLookup, a: Day["activities"][number], day: 
   return q ? lookup(q) : null;
 }
 
+/** For each activity, the leg from its place to the next mapped activity's. */
+function dayLegs(places: (Place | null | undefined)[], legs: LegLookup): (Leg | null | undefined)[] {
+  return places.map((p, i) => {
+    const next = p ? places.slice(i + 1).find(Boolean) : null;
+    return p && next ? legs(p, next) : undefined;
+  });
+}
+
+const noLegs: LegLookup = () => undefined;
+
 interface ViewProps extends CommentProps {
   itinerary: Itinerary;
   /** Places for photos; see usePlaces. */
   lookup?: PlaceLookup;
+  /** Street routes between stops, for travel times in the timeline; see useLegs. */
+  legs?: LegLookup;
   /** Rendered between the trip facts and the details, e.g. the route map. */
   map?: ReactNode;
   /** Remembers which boxes this trip has collapsed; every box starts open. */
   tripId?: string;
 }
 
-export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPlaces, map, tripId }: ViewProps) {
+export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPlaces, legs = noLegs, map, tripId }: ViewProps) {
+  const focus = useMapFocus();
+  const docked = useFocusValue((s) => s.docked);
   const c = it.currency;
   const cp = { counts, onComment };
   const days = `${it.days.length} day${it.days.length === 1 ? "" : "s"}`;
@@ -339,7 +414,7 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
       </div>
 
       {map && (
-        <InfoBox id="route" icon="🗺️" title="Route">
+        <InfoBox id="route" icon="🗺️" title="Route" stuck={docked} onUnstick={() => focus.setDocked(false)}>
           <div className="box-pad">{map}</div>
         </InfoBox>
       )}
@@ -386,9 +461,10 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
 
       <InfoBox id="days" icon="📅" title="Day by day" count={it.days.length}>
         <div className="box-pad">
-          {it.days.map((d, i) => (
-            <DayCard key={d.id || i} day={d} currency={c} places={d.activities.map((a) => lookupActivity(lookup, a, d))} {...cp} />
-          ))}
+          {it.days.map((d, i) => {
+            const places = d.activities.map((a) => lookupActivity(lookup, a, d));
+            return <DayCard key={d.id || i} day={d} currency={c} places={places} legs={dayLegs(places, legs)} {...cp} />;
+          })}
         </div>
       </InfoBox>
 

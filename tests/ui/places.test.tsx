@@ -1,9 +1,9 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CoverPhotos, PlaceThumb, PhotoViewer, credit, usePlaces } from "@/components/places";
-import { normalizeQuery, placeQueries } from "@/lib/route";
-import { fakePlace, sampleItinerary } from "../fixtures";
+import { CoverPhotos, PlaceThumb, PhotoViewer, credit, useLegs, usePlaces } from "@/components/places";
+import { buildRoute, dayPath, legKey, normalizeQuery, placeQueries, type Route } from "@/lib/route";
+import { fakePlace, fullLookup, sampleItinerary } from "../fixtures";
 import { mockFetch } from "./fixtures";
 
 const kyoto = fakePlace("Kyoto");
@@ -167,5 +167,65 @@ describe("usePlaces", () => {
     await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(fetch).toHaveBeenCalledOnce();
     expect(latest.loading).toBe(false);
+  });
+});
+
+describe("useLegs", () => {
+  let latest: ReturnType<typeof useLegs>;
+  function Harness({ route }: { route: Route }) {
+    latest = useLegs(route);
+    return null;
+  }
+
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
+  const route = buildRoute(sampleItinerary(), fullLookup());
+  const walk = { mode: "walk", meters: 500, seconds: 400, path: [] };
+
+  /** Answers like the server: every leg of the first `perCall` sequences. */
+  function serve(perCall = Infinity) {
+    return mockFetch((_url, init) => {
+      const { sequences } = JSON.parse(init!.body as string) as { sequences: [number, number][][] };
+      const legs: Record<string, unknown> = {};
+      for (const seq of sequences.slice(0, perCall)) {
+        for (let i = 1; i < seq.length; i++) legs[legKey({ lat: seq[i - 1][0], lng: seq[i - 1][1] }, { lat: seq[i][0], lng: seq[i][1] })] = walk;
+      }
+      return { legs };
+    });
+  }
+
+  it("routes each day's stops, from the stay and back", async () => {
+    const fetch = serve();
+    render(<Harness route={route} />);
+    expect(latest.loading).toBe(true);
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch.mock.calls[0][0]).toBe("/api/routes");
+    const { sequences } = JSON.parse(fetch.mock.calls[0][1]!.body as string);
+    expect(sequences).toEqual(route.days.map((d) => dayPath(d).map((p) => [p.lat, p.lng])));
+    expect(latest.loading).toBe(false);
+    const [stay, first] = dayPath(route.days[0]);
+    expect(latest.legs(stay, first)).toEqual(walk);
+    expect(latest.legs(first, stay)).toBeUndefined();
+  });
+
+  it("keeps asking while the server routes a day at a time", async () => {
+    const fetch = serve(1);
+    render(<Harness route={route} />);
+    for (let i = 0; i < 4; i++) await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string).sequences).toHaveLength(1);
+    expect(latest.loading).toBe(false);
+  });
+
+  it("gives up, leaving straight lines, when routing fails", async () => {
+    const fetch = mockFetch(() => new Response("down", { status: 500 }));
+    render(<Harness route={route} />);
+    for (let i = 0; i < 3; i++) await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(latest.loading).toBe(false);
+    const [stay, first] = dayPath(route.days[0]);
+    expect(latest.legs(stay, first)).toBeUndefined();
   });
 });

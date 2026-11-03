@@ -42,10 +42,15 @@ The itinerary shows a route map and photos of destinations, activities, and stay
 - **Map:** [MapLibre GL](https://maplibre.org) with [OpenFreeMap](https://openfreemap.org) tiles (OpenStreetMap data).
 - **Places:** [Nominatim](https://nominatim.org), the OpenStreetMap search, finds each destination, activity, stay, and airport.
 - **Photos:** when a place's OpenStreetMap entry links to Wikidata, its image comes from [Wikimedia Commons](https://commons.wikimedia.org), shown with its author and license.
+- **Routes:** [OSRM](https://project-osrm.org) on the [FOSSGIS servers](https://routing.openstreetmap.de) finds the way between each day's stops: on foot for hops up to 2 km, by road beyond that. The map draws the streets, and the timeline shows how long each leg takes.
+
+The map and the itinerary work together. Each stop in the timeline has a numbered badge matching its pin: click one to show it on the map, and click another stop of the same day to see the way between them, with the total time and distance. The travel time between two activities does the same for that leg. Picking from the itinerary keeps the map docked at the top while you scroll; a pin's popup has "Show in itinerary" to jump back.
 
 The public Nominatim server allows one request per second for the whole app, so lookups are paced, a few new places per request. Pins and photos fill in over a few seconds for a new trip. Results are cached in the database for 30 days, and revising a plan only looks up new places. Famous sights and neighborhoods are found reliably; small restaurants and hotels sometimes aren't, and then simply have no pin or photo.
 
-Set `NOMINATIM_EMAIL` so the Nominatim operators can contact you about heavy use. For a busy deployment, self-host Nominatim and the tiles and point `NOMINATIM_URL` and `MAP_STYLE_URL` at them.
+Routes are paced the same way (about one request a second, a few days per request) and cached for 90 days, leg by leg, so revising one stop reroutes only its legs. Until a leg is routed, or if routing fails, the map draws it as a straight dashed line.
+
+Set `NOMINATIM_EMAIL` so the Nominatim operators can contact you about heavy use. For a busy deployment, self-host Nominatim, OSRM, and the tiles and point `NOMINATIM_URL`, `ROUTING_URL`, and `MAP_STYLE_URL` at them.
 
 ## Testing
 
@@ -130,6 +135,7 @@ Settings in `.env`:
 | `NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Place search |
 | `NOMINATIM_EMAIL` | (unset) | Contact address sent to Nominatim |
 | `PHOTON_URL` | `https://photon.komoot.io` | Starting point suggestions in Settings |
+| `ROUTING_URL` | `https://routing.openstreetmap.de` | Routes between stops (OSRM, with `/routed-foot` and `/routed-car`) |
 | `CONTACT_EMAIL` | (unset) | Address shown on the Contact, Privacy, and Terms pages |
 | `PLANAWAY_EFFORT` | `medium` | `low` to `max`. Higher means more thorough research and higher cost. |
 

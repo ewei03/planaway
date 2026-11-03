@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildRoute, dayPath, greatCircle, heroPhotos, normalizeQuery, placeQueries, unwrapLng, type PlaceLookup } from "@/lib/route";
+import {
+  buildRoute,
+  dayPath,
+  dayStops,
+  formatDistance,
+  formatDuration,
+  greatCircle,
+  haversine,
+  heroPhotos,
+  legKey,
+  legLabel,
+  normalizeQuery,
+  placeQueries,
+  unwrapLng,
+  type PlaceLookup,
+} from "@/lib/route";
 import { fakePlace, fullLookup, sampleItinerary } from "../fixtures";
 
 describe("placeQueries", () => {
@@ -162,5 +177,47 @@ describe("greatCircle", () => {
 
   it("handles identical points", () => {
     expect(greatCircle(sfo, sfo)).toHaveLength(2);
+  });
+});
+
+describe("travel between stops", () => {
+  it("orders a day's stops from the stay and back", () => {
+    const day = buildRoute(sampleItinerary(), fullLookup()).days[0];
+    expect(dayStops(day).map((s) => s.label)).toEqual(["Gion Ryokan", "Nishiki Market", "Pontocho dinner", "Gion Ryokan"]);
+  });
+
+  it("keys legs by both ends, in order, to about a metre", () => {
+    const a = { lat: 35.0000012, lng: 135.7 };
+    const b = { lat: 35.01, lng: 135.71 };
+    expect(legKey(a, b)).toBe("35.00000,135.70000;35.01000,135.71000");
+    expect(legKey(b, a)).not.toBe(legKey(a, b));
+  });
+
+  it.each([
+    [20, "1 min"],
+    [600, "10 min"],
+    [3600, "1 h"],
+    [3900, "1 h 5 min"],
+  ])("formats %i seconds as %s", (s, text) => {
+    expect(formatDuration(s)).toBe(text);
+  });
+
+  it.each([
+    [3, "10 m"],
+    [847, "850 m"],
+    [2440, "2.4 km"],
+    [38_200, "38 km"],
+  ])("formats %i metres as %s", (m, text) => {
+    expect(formatDistance(m)).toBe(text);
+  });
+
+  it("labels walking and road legs", () => {
+    expect(legLabel({ mode: "walk", meters: 850, seconds: 720, path: [] })).toBe("🚶 12 min · 850 m");
+    expect(legLabel({ mode: "drive", meters: 38_000, seconds: 2700, path: [] })).toBe("🚗 45 min · 38 km");
+  });
+
+  it("measures straight-line distance", () => {
+    // Kyoto Station to Nara Station is about 35 km as the crow flies.
+    expect(haversine({ lat: 34.9858, lng: 135.7588 }, { lat: 34.6809, lng: 135.8195 }) / 1000).toBeCloseTo(34.4, 0);
   });
 });

@@ -16,7 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Itinerary } from "../itinerary";
 import type { UserSettings } from "../settings";
-import type { Place } from "../route";
+import type { Leg, Place } from "../route";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -189,5 +189,16 @@ export const comments = pgTable(
 export const placeCache = pgTable("place_cache", {
   query: text("query").primaryKey(),
   place: jsonb("place").$type<Place | null>(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Travel between two points (walking, or by road for longer hops), keyed by
+ * legKey. Shared by every trip, like place_cache; streets change slowly, so
+ * rows are kept for the TTL in lib/routing.ts. Null means no route was found.
+ */
+export const routeCache = pgTable("route_cache", {
+  key: text("key").primaryKey(),
+  leg: jsonb("leg").$type<Leg | null>(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });

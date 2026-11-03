@@ -170,9 +170,66 @@ export function buildRoute(it: Itinerary, lookup: PlaceLookup): Route {
   return { days, flights, lodging, points };
 }
 
+/** One color per day, cycling: the day's line and pins on the map, and its stop badges in the timeline. */
+export const DAY_COLORS = ["#0f6e63", "#c2410c", "#4f46e5", "#b91c1c", "#0369a1", "#a16207", "#7e22ce", "#be185d"];
+export const dayColor = (day: number) => DAY_COLORS[(day - 1) % DAY_COLORS.length];
+
+// ---------- Travel between stops ----------
+
+/** How to get from one stop to the next, along real streets (see lib/routing.ts). */
+export interface Leg {
+  /** Walking for short hops; anything longer is by road (car, taxi, or bus). */
+  mode: "walk" | "drive";
+  meters: number;
+  seconds: number;
+  /** The way there, as [lng, lat] pairs. */
+  path: [number, number][];
+}
+
+/** Returns the leg between two points: null if there's no route, undefined if not looked up yet. */
+export type LegLookup = (from: LatLng, to: LatLng) => Leg | null | undefined;
+
+/** Cache key for the leg between two points, to about a metre. */
+export function legKey(from: LatLng, to: LatLng): string {
+  const p = (x: LatLng) => `${x.lat.toFixed(5)},${x.lng.toFixed(5)}`;
+  return `${p(from)};${p(to)}`;
+}
+
+/** The stops of a day in travel order: from that night's stay, through each stop, and back. */
+export function dayStops(day: DayRoute): Stop[] {
+  return day.lodging ? [day.lodging, ...day.stops, day.lodging] : day.stops;
+}
+
+/** "12 min", "1 h 5 min". */
+export function formatDuration(seconds: number): string {
+  const min = Math.max(1, Math.round(seconds / 60));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+}
+
+/** "850 m", "2.4 km", "38 km". */
+export function formatDistance(meters: number): string {
+  if (meters < 950) return `${Math.max(10, Math.round(meters / 10) * 10)} m`;
+  const km = meters / 1000;
+  return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
+}
+
+/** "🚶 12 min · 850 m" for the timeline and the map. */
+export function legLabel(leg: Leg): string {
+  return `${leg.mode === "walk" ? "🚶" : "🚗"} ${formatDuration(leg.seconds)} · ${formatDistance(leg.meters)}`;
+}
+
+/** Straight-line distance in metres. */
+export function haversine(a: LatLng, b: LatLng): number {
+  const rad = Math.PI / 180;
+  const h = Math.sin(((b.lat - a.lat) * rad) / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(((b.lng - a.lng) * rad) / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+}
+
 // ---------- Geometry ----------
 
-type LatLng = { lat: number; lng: number };
+export type LatLng = { lat: number; lng: number };
 
 /** Shifts a longitude by whole turns so it lies within 180° of `ref`. */
 export function unwrapLng(lng: number, ref: number): number {
@@ -206,8 +263,7 @@ export function greatCircle(a: LatLng, b: LatLng, segments = 64): LatLng[] {
 
 /** The ordered path for one day: from that night's stay, through the stops, and back. */
 export function dayPath(day: DayRoute): { lat: number; lng: number }[] {
-  const stops = day.lodging ? [day.lodging, ...day.stops, day.lodging] : day.stops;
-  return stops.map((s) => ({ lat: s.place.lat, lng: s.place.lng }));
+  return dayStops(day).map((s) => ({ lat: s.place.lat, lng: s.place.lng }));
 }
 
 /** Photos for the trip's header: the first photo of each destination. */

@@ -15,11 +15,15 @@ import {
 } from "./client";
 import { CommentsPanel } from "./CommentsPanel";
 import { ItineraryView } from "./ItineraryView";
-import { usePlaces } from "./places";
+import { buildRoute, type Route } from "@/lib/route";
+import { createMapFocus, MapFocusProvider } from "./mapFocus";
+import { useLegs, usePlaces } from "./places";
 import { TripMap } from "./TripMap";
 import { BookmarkIcon, ChevronDownIcon, CommentIcon, DownloadIcon, HistoryIcon, LogoIcon, MenuIcon, PlusIcon, UserPlusIcon } from "./icons";
 import { ItinerarySkeleton } from "./Skeleton";
 import { Viewers } from "./Viewers";
+
+const NO_ROUTE: Route = { days: [], flights: [], lodging: [], points: [] };
 
 interface Props {
   trip: TripView;
@@ -70,6 +74,10 @@ export function ItineraryPane(props: Props) {
   const itinerary: Itinerary | null =
     viewing === "current" ? trip.itinerary : (trip.versions.find((v) => v.id === viewing)?.itinerary ?? null);
   const { lookup, loading: placesLoading } = usePlaces(itinerary);
+  const route = useMemo(() => (itinerary ? buildRoute(itinerary, lookup) : NO_ROUTE), [itinerary, lookup]);
+  const { legs, loading: legsLoading } = useLegs(route);
+  // What the map is focused on; a fresh start for each trip.
+  const focus = useMemo(createMapFocus, [trip.id]);
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
@@ -190,14 +198,17 @@ export function ItineraryPane(props: Props) {
       <div className="pane-body">
         <div className="itinerary">
           {itinerary ? (
-            <ItineraryView
-              itinerary={itinerary}
-              tripId={trip.id}
-              counts={counts}
-              onComment={setCommentAnchor}
-              lookup={lookup}
-              map={<TripMap itinerary={itinerary} lookup={lookup} loading={placesLoading} />}
-            />
+            <MapFocusProvider value={focus}>
+              <ItineraryView
+                itinerary={itinerary}
+                tripId={trip.id}
+                counts={counts}
+                onComment={setCommentAnchor}
+                lookup={lookup}
+                legs={legs}
+                map={<TripMap route={route} legs={legs} loading={placesLoading} routing={legsLoading} />}
+              />
+            </MapFocusProvider>
           ) : (
             working ? (
               <ItinerarySkeleton label="Researching your trip…" caption="Researching your trip. The itinerary will appear here." />

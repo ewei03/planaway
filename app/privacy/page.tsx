@@ -49,7 +49,8 @@ export default function Privacy() {
           </li>
           <li>
             <b>Map and place services.</b> To show maps, pins, and photos, our server looks up the names of places in your trips with OpenStreetMap
-            (Nominatim), Photon, and Wikimedia. These lookups contain place names only, not who you are. Your browser loads map images from
+            (Nominatim), Photon, and Wikimedia, and asks the OpenStreetMap routing servers (FOSSGIS) for the way between them. These requests
+            contain place names and map coordinates only, not who you are. Your browser loads map images from
             OpenFreeMap and photos from Wikimedia Commons, so those services see your IP address, as any website you visit would.
           </li>
         </ul>

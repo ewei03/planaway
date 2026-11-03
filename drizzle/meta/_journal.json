@@ -78,6 +78,13 @@
       "when": 1793718140046,
       "tag": "0010_trip_completed",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793720033288,
+      "tag": "0011_route_cache",
+      "breakpoints": true
     }
   ]
 }
