@@ -209,6 +209,9 @@ input, select, textarea {
 textarea { resize: vertical; }
 /* Every dropdown draws the same arrow, at the same distance from the edge in every browser. */
 select { appearance: none; background-image: var(--select-arrow); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; cursor: pointer; }
+/* The open list takes its colors from the select, so a transparent select (sort, versions) left
+   light text on the browser's white list in dark mode. Give the options the theme's own. */
+select option, select optgroup { background-color: var(--surface); color: var(--text); }
 input:focus, select:focus, textarea:focus, .btn:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
