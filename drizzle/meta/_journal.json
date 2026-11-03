@@ -71,6 +71,13 @@
       "when": 1793681596642,
       "tag": "0009_birth_date",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793718140046,
+      "tag": "0010_trip_completed",
+      "breakpoints": true
     }
   ]
 }

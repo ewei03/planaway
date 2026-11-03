@@ -6,7 +6,7 @@ import type { TripSummary } from "@/components/client";
 import { Sidebar } from "@/components/Sidebar";
 import { me } from "./fixtures";
 
-const trip = { destinations: [] as string[], updatedAt: new Date(Date.now() - 5 * 60_000).toISOString(), hasItinerary: true, role: "owner", sharedBy: null } as const;
+const trip = { destinations: [] as string[], updatedAt: new Date(Date.now() - 5 * 60_000).toISOString(), hasItinerary: true, startDate: null, completedAt: null, role: "owner", sharedBy: null } as const;
 
 const trips: TripSummary[] = [
   { ...trip, id: "t1", title: "Kyoto", destinations: ["Kyoto", "Nara"] },
@@ -26,6 +26,7 @@ function setupProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}): Co
     onSaveVersion: vi.fn(),
     onExport: vi.fn(),
     onShare: vi.fn(),
+    onComplete: vi.fn(),
     onDelete: vi.fn(),
     onLeave: vi.fn(),
     onSignOut: vi.fn(),
@@ -85,6 +86,44 @@ describe("Sidebar", () => {
     localStorage.removeItem("planaway:trip-sort");
   });
 
+  it("sorts by departure date, soonest first, with undated trips last, and says when each departs", async () => {
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+    const dated: TripSummary[] = [
+      { ...trip, id: "a", title: "Undated old", updatedAt: ago(30) },
+      { ...trip, id: "b", title: "June", startDate: "2027-06-10" },
+      { ...trip, id: "c", title: "Undated new", updatedAt: ago(1) },
+      { ...trip, id: "d", title: "March", startDate: "2027-03-04" },
+    ];
+    const titles = () => [...document.querySelectorAll(".t-title")].map((t) => t.textContent);
+    localStorage.removeItem("planaway:trip-sort");
+    render(<Sidebar {...setupProps({ trips: dated })} />);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Sort trips" }), "departure");
+    expect(titles()).toEqual(["March", "June", "Undated new", "Undated old"]);
+    expect(screen.getByRole("button", { name: /^March/ })).toHaveTextContent(/Departs Mar 4, 2027/);
+    expect(screen.getByRole("button", { name: /^Undated new/ })).toHaveTextContent("Updated yesterday");
+    localStorage.removeItem("planaway:trip-sort");
+  });
+
+  it("puts completed trips, yours and shared, in their own section", async () => {
+    const done = "2026-10-01T00:00:00.000Z";
+    const props = setup({ trips: [...trips, { ...trip, id: "t5", title: "Paris", completedAt: done }, { ...trip, id: "t6", title: "Rome", role: "editor", sharedBy: "Sam", completedAt: done }] });
+    const section = screen.getByRole("heading", { name: "Completed trips" }).closest("section")!;
+    expect([...section.querySelectorAll(".t-title")].map((t) => t.textContent)).toEqual(["Paris", "Rome"]);
+    expect(screen.getAllByRole("list")[0]).not.toHaveTextContent("Paris");
+
+    await openMenu("Paris");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Move out of Completed" }));
+    expect(props.onComplete).toHaveBeenCalledWith("t5", false);
+    await openMenu("Kyoto");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Mark as completed" }));
+    expect(props.onComplete).toHaveBeenCalledWith("t1", true);
+  });
+
+  it("hides the Completed section when nothing is completed", () => {
+    setup();
+    expect(screen.queryByRole("heading", { name: "Completed trips" })).not.toBeInTheDocument();
+  });
+
   it("shows each trip's destination photo, or its initial without one", () => {
     const photo = { src: "big.jpg", thumb: "kyoto-thumb.jpg", author: "Aiko", license: "CC BY 4.0", sourceUrl: null };
     const place = { id: "node/1", name: "Kyoto", address: null, lat: 0, lng: 0, mapsUrl: null, photos: [photo] };
@@ -105,7 +144,7 @@ describe("Sidebar", () => {
   it("opens a trip menu with share, save, export, and delete", async () => {
     const props = setup();
     await openMenu("Kyoto");
-    expect(menuItems()).toEqual(["Rename…", "Share…", "Save version…", "Export as…›", "Delete trip…"]);
+    expect(menuItems()).toEqual(["Rename…", "Share…", "Save version…", "Export as…›", "Mark as completed", "Delete trip…"]);
 
     await userEvent.hover(screen.getByRole("menuitem", { name: /Export as/ }));
     const formats = screen.getByRole("menu", { name: "Export as" });
@@ -144,7 +183,7 @@ describe("Sidebar", () => {
   it("lets editors of a shared trip rename, save, export, or leave it, but not share or delete it", async () => {
     const props = setup();
     await openMenu("Oslo");
-    expect(menuItems()).toEqual(["Rename…", "Save version…", "Export as…›", "Leave trip…"]);
+    expect(menuItems()).toEqual(["Rename…", "Save version…", "Export as…›", "Mark as completed", "Leave trip…"]);
     await userEvent.click(screen.getByRole("menuitem", { name: "Leave trip…" }));
     expect(props.onLeave).toHaveBeenCalledWith("t4");
   });

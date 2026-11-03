@@ -345,6 +345,16 @@ export function PlanAway({
     downloadExport(tripId, format, version).catch((err: Error) => notify(err.message));
   };
 
+  const completeTrip = async (tripId: string, completed: boolean) => {
+    try {
+      await api(`/api/trips/${tripId}`, { method: "PATCH", body: JSON.stringify({ completed }) });
+      loadTrips();
+      notify(completed ? "Moved to Completed trips" : "Moved out of Completed trips");
+    } catch (err) {
+      notify((err as Error).message);
+    }
+  };
+
   const deleteTrip = async (tripId: string) => {
     const target = findTrip(tripId);
     if (!target) return;
@@ -406,6 +416,7 @@ export function PlanAway({
           onSaveVersion={saveVersion}
           onExport={exportTrip}
           onShare={setSharingTrip}
+          onComplete={completeTrip}
           onDelete={deleteTrip}
           onLeave={leaveTrip}
           onSignOut={() => signOut({ redirectTo: "/login" })}

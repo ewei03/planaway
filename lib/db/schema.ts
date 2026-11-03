@@ -60,6 +60,8 @@ export const trips = pgTable(
     turnUserId: uuid("turn_user_id").references(() => users.id, { onDelete: "set null" }),
     /** Comments created after this were not yet shown to the agent. */
     commentsSeenAt: timestamp("comments_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When someone marked the trip as done; null while it's still ahead. */
+    completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

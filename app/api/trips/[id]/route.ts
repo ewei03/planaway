@@ -1,5 +1,5 @@
 import { body, handler, jsonError, requireUser, str, type IdParams } from "@/lib/http";
-import { deleteTrip, getTripView, renameTrip } from "@/lib/store";
+import { deleteTrip, getTripView, renameTrip, setTripCompleted } from "@/lib/store";
 
 export const GET = handler(async (_req: Request, { params }: IdParams) => {
   const user = await requireUser();
@@ -8,9 +8,16 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
 
 export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   const user = await requireUser();
-  const title = str((await body(req)).title, 120);
+  const data = await body(req);
+  const tripId = (await params).id;
+  // Either a rename ({ title }) or moving it to/from Completed ({ completed }).
+  if (typeof data.completed === "boolean") {
+    await setTripCompleted(user.id, tripId, data.completed);
+    return new Response(null, { status: 204 });
+  }
+  const title = str(data.title, 120);
   if (!title) return jsonError("Title is required.", 400);
-  await renameTrip(user.id, (await params).id, title);
+  await renameTrip(user.id, tripId, title);
   return new Response(null, { status: 204 });
 });
 

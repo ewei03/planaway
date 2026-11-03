@@ -37,6 +37,7 @@ import {
   requireRole,
   revokeTripInvite,
   saveVersion,
+  setTripCompleted,
   setTripMemberRole,
   setThreadResolved,
   tripAccess,
@@ -208,6 +209,33 @@ describe("listing trips", () => {
     await renameTrip(u.id, mine, "Bumped");
     expect((await listTrips(u.id)).map((t) => t.id)).toEqual([mine, theirs]);
     expect((await listTrips(u.id))[0]).not.toHaveProperty("createdBy");
+  });
+});
+
+describe("completing trips", () => {
+  it("lists each trip's departure date and lets editors mark it completed without reordering", async () => {
+    const tripId = await makeTrip(owner.id, sampleItinerary());
+    await shareTrip(owner, tripId, editor, "editor");
+    await shareTrip(owner, tripId, viewer, "viewer");
+    const find = async (userId: string) => (await listTrips(userId)).find((t) => t.id === tripId)!;
+    const before = await find(owner.id);
+    expect(before).toMatchObject({ startDate: sampleItinerary().start_date, completedAt: null });
+
+    const rev = (await getTripRevision(owner.id, tripId)).revision;
+    await setTripCompleted(editor.id, tripId, true);
+    const after = await find(viewer.id);
+    expect(after.completedAt).toEqual(expect.any(String));
+    expect(after.updatedAt).toBe(before.updatedAt);
+    expect((await getTripRevision(owner.id, tripId)).revision).toBe(rev + 1);
+
+    await expect(setTripCompleted(viewer.id, tripId, false)).rejects.toThrow(/mark trips completed/);
+    await setTripCompleted(owner.id, tripId, false);
+    expect((await find(owner.id)).completedAt).toBeNull();
+  });
+
+  it("has no departure date before the itinerary does", async () => {
+    const tripId = await makeTrip(owner.id);
+    expect((await listTrips(owner.id)).find((t) => t.id === tripId)).toMatchObject({ startDate: null, completedAt: null });
   });
 });
 

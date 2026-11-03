@@ -230,7 +230,7 @@ describe("trip sharing API", () => {
 });
 
 describe("trips API", () => {
-  it("creates, lists, renames, and deletes trips", async () => {
+  it("creates, lists, renames, completes, and deletes trips", async () => {
     const res = await trips.POST();
     expect(res.status).toBe(201);
     const { id } = await res.json();
@@ -238,6 +238,8 @@ describe("trips API", () => {
     expect((await trip.PATCH(req("PATCH", "/", { title: "" }), params({ id }))).status).toBe(400);
     expect((await trip.PATCH(req("PATCH", "/", { title: "Lisbon" }), params({ id }))).status).toBe(204);
     expect((await (await trip.GET(req("GET", "/"), params({ id }))).json()).title).toBe("Lisbon");
+    expect((await trip.PATCH(req("PATCH", "/", { completed: true }), params({ id }))).status).toBe(204);
+    expect(await (await trips.GET()).json()).toContainEqual(expect.objectContaining({ id, title: "Lisbon", completedAt: expect.any(String) }));
     expect(await (await revision.GET(req("GET", "/"), params({ id }))).json()).toEqual({ revision: expect.any(Number), busy: null, viewers: [] });
     expect((await trip.DELETE(req("DELETE", "/"), params({ id }))).status).toBe(204);
     expect((await trip.GET(req("GET", "/"), params({ id }))).status).toBe(404);

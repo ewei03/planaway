@@ -61,6 +61,10 @@ export interface TripSummary {
   destinations: string[];
   updatedAt: string;
   hasItinerary: boolean;
+  /** The itinerary's first day (YYYY-MM-DD), or null before it has dates. */
+  startDate: string | null;
+  /** When the trip was marked completed; null for trips still ahead. */
+  completedAt: string | null;
   /** owner for the user's own trips; editor or viewer for trips shared with them. */
   role: Role;
   /** Who shared it with the user; null for their own trips. */
@@ -355,6 +359,8 @@ export async function listTrips(userId: string): Promise<TripSummary[]> {
       destinations: s.trips.destinations,
       updatedAt: s.trips.updatedAt,
       hasItinerary: sql<boolean>`${s.trips.itinerary} is not null`,
+      startDate: sql<string | null>`${s.trips.itinerary}->>'start_date'`,
+      completedAt: s.trips.completedAt,
       createdBy: s.trips.createdBy,
       memberRole: s.tripMembers.role,
       ownerName: s.users.name,
@@ -369,6 +375,8 @@ export async function listTrips(userId: string): Promise<TripSummary[]> {
     return {
       ...t,
       updatedAt: t.updatedAt.toISOString(),
+      startDate: t.startDate || null,
+      completedAt: t.completedAt?.toISOString() ?? null,
       role: mine ? "owner" : (memberRole ?? "viewer"),
       sharedBy: mine ? null : ownerName,
     };
@@ -457,6 +465,18 @@ export async function renameTrip(userId: string, tripId: string, title: string):
   requireRole(role, "editor", "rename trips");
   await db.update(s.trips).set({ title }).where(eq(s.trips.id, tripId));
   await bump(db, tripId);
+}
+
+/** Moves a trip to (or out of) Completed for everyone who has it. It isn't an edit to the
+ *  plan, so the trip keeps its place in "recently updated"; the revision still moves so
+ *  collaborators' lists catch up. */
+export async function setTripCompleted(userId: string, tripId: string, completed: boolean): Promise<void> {
+  const { db, role } = await tripAccess(userId, tripId);
+  requireRole(role, "editor", "mark trips completed");
+  await db
+    .update(s.trips)
+    .set({ completedAt: completed ? new Date() : null, revision: sql`${s.trips.revision} + 1` })
+    .where(eq(s.trips.id, tripId));
 }
 
 /** Only the trip's owner can delete it. */

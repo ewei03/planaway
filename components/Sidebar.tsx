@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { canEdit, EXPORT_FORMATS, relativeTime, useMinuteTick, type ExportFormat, type SessionUser, type TripSummary } from "./client";
+import { canEdit, EXPORT_FORMATS, formatTripDate, relativeTime, useMinuteTick, type ExportFormat, type SessionUser, type TripSummary } from "./client";
 import { areaQuery } from "@/lib/route";
 import Link from "next/link";
 import { Avatar } from "./Avatar";
@@ -10,8 +10,23 @@ import { CloseIcon, GearIcon, LogoIcon, PlusIcon } from "./icons";
 import { credit, type PlaceLookup } from "./places";
 import { SiteFooter } from "./SiteFooter";
 
-type SortOrder = "newest" | "oldest";
+type SortOrder = "newest" | "oldest" | "departure";
 const SORT_KEY = "planaway:trip-sort";
+const SORT_ORDERS: SortOrder[] = ["newest", "oldest", "departure"];
+
+/** Sorts trips for the list. By departure, the soonest trip comes first and
+ *  trips without dates yet go last, most recently updated first. */
+export function sortTrips(trips: TripSummary[], order: SortOrder): TripSummary[] {
+  const updated = (t: TripSummary) => Date.parse(t.updatedAt);
+  return [...trips].sort((a, b) => {
+    if (order === "departure") {
+      if (a.startDate && b.startDate && a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+      if (!a.startDate !== !b.startDate) return a.startDate ? -1 : 1;
+      return updated(b) - updated(a);
+    }
+    return order === "newest" ? updated(b) - updated(a) : updated(a) - updated(b);
+  });
+}
 
 interface Props {
   user: SessionUser;
@@ -28,6 +43,8 @@ interface Props {
   onSaveVersion: (tripId: string) => void;
   onExport: (tripId: string, format: ExportFormat) => void;
   onShare: (tripId: string) => void;
+  /** Moves the trip to the Completed section, or back out of it. */
+  onComplete: (tripId: string, completed: boolean) => void;
   onDelete: (tripId: string) => void;
   onLeave: (tripId: string) => void;
   onSignOut: () => void;
@@ -44,7 +61,7 @@ interface OpenMenu {
 
 export function Sidebar(props: Props) {
   const { user, trips, loading = false, activeId, lookup, onSelect, onNewTrip, onSignOut, onHide } = props;
-  const { onRename, onSaveVersion, onExport, onShare, onDelete, onLeave } = props;
+  const { onRename, onSaveVersion, onExport, onShare, onComplete, onDelete, onLeave } = props;
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   useMinuteTick();
 
@@ -52,7 +69,8 @@ export function Sidebar(props: Props) {
   // server-rendered markup matches the first client render.
   useEffect(() => {
     try {
-      if (localStorage.getItem(SORT_KEY) === "oldest") setSort("oldest");
+      const saved = localStorage.getItem(SORT_KEY) as SortOrder | null;
+      if (saved && SORT_ORDERS.includes(saved)) setSort(saved);
     } catch {}
   }, []);
 
@@ -101,7 +119,9 @@ export function Sidebar(props: Props) {
           <TripThumb trip={t} lookup={lookup} />
           <span className="t-text">
             <span className="t-title">{t.title}</span>
-            <span className="t-meta">Updated {relativeTime(t.updatedAt)}</span>
+            <span className="t-meta">
+              {sort === "departure" && t.startDate ? `Departs ${formatTripDate(t.startDate)}` : `Updated ${relativeTime(t.updatedAt)}`}
+            </span>
           </span>
         </button>
         <button
@@ -190,6 +210,11 @@ export function Sidebar(props: Props) {
                 </div>
               )}
             </div>
+            {editable && (
+              <button role="menuitem" onClick={() => run(() => onComplete(t.id, !t.completedAt))}>
+                {t.completedAt ? "Move out of Completed" : "Mark as completed"}
+              </button>
+            )}
             <hr className="menu-sep" />
             {owner ? (
               <button role="menuitem" className="danger-text" onClick={() => run(() => onDelete(t.id))}>
@@ -206,10 +231,11 @@ export function Sidebar(props: Props) {
     );
   };
 
-  const sign = sort === "newest" ? -1 : 1;
-  const sorted = [...trips].sort((a, b) => sign * (Date.parse(a.updatedAt) - Date.parse(b.updatedAt)));
-  const mine = sorted.filter((t) => t.role === "owner");
-  const shared = sorted.filter((t) => t.role !== "owner");
+  const sorted = sortTrips(trips, sort);
+  const upcoming = sorted.filter((t) => !t.completedAt);
+  const mine = upcoming.filter((t) => t.role === "owner");
+  const shared = upcoming.filter((t) => t.role !== "owner");
+  const completed = sorted.filter((t) => t.completedAt);
 
   return (
     <aside className="sidebar">
@@ -234,6 +260,7 @@ export function Sidebar(props: Props) {
             <select className="trip-sort" aria-label="Sort trips" value={sort} onChange={(e) => changeSort(e.target.value as SortOrder)}>
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
+              <option value="departure">Departure date</option>
             </select>
           </div>
           {loading ? (
@@ -249,6 +276,12 @@ export function Sidebar(props: Props) {
           <section>
             <h2 className="side-heading">Shared with you</h2>
             <ul className="trip-list">{shared.map(tripItem)}</ul>
+          </section>
+        )}
+        {completed.length > 0 && (
+          <section className="completed-trips">
+            <h2 className="side-heading">Completed trips</h2>
+            <ul className="trip-list">{completed.map(tripItem)}</ul>
           </section>
         )}
       </div>
