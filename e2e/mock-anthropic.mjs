@@ -133,6 +133,15 @@ function json(res, data, headers = {}) {
 function maps(req, res) {
   const url = new URL(req.url, base);
   if (url.pathname === "/search") return json(res, nominatim(url.searchParams.get("q") ?? "")), true;
+  // Photon near a point (finding an activity): a place just beside it, except anything with "dinner" in its name.
+  if (url.pathname === "/api/" && url.searchParams.has("lat")) {
+    const q = url.searchParams.get("q") ?? "";
+    const [lat, lon] = [Number(url.searchParams.get("lat")), Number(url.searchParams.get("lon"))];
+    const features = /dinner/i.test(q)
+      ? []
+      : [{ geometry: { coordinates: [lon + 0.004, lat + 0.003] }, properties: { osm_type: "N", osm_id: hash(q), osm_key: "amenity", name: `${q} (found)`, city: "Kyoto" } }];
+    return json(res, { features }), true;
+  }
   // Photon type-ahead: one city named after whatever was typed.
   if (url.pathname === "/api/") {
     const q = url.searchParams.get("q") ?? "";

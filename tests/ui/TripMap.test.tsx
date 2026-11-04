@@ -102,11 +102,12 @@ vi.mock("maplibre-gl", () => {
 
 import { createMapFocus, MapFocusProvider } from "@/components/mapFocus";
 import { MapsProvider } from "@/components/places";
-import { DAY_COLORS, TripMap, dayColor } from "@/components/TripMap";
+import { DAY_COLORS, TripMap, dayColor, searchItems, searchRoute, summarize } from "@/components/TripMap";
 import { buildRoute, legKey, type Leg, type LegLookup } from "@/lib/route";
 
 const live = () => state.markers.filter((m) => !m.removed);
-const labels = () => live().map((m) => m.el.textContent);
+// Numbered stops by their number; stays and airports (line icons) by their kind.
+const labels = () => live().map((m) => m.el.textContent || m.el.getAttribute("aria-label")!.split(":")[0]);
 const byTitle = (title: string) => live().find((m) => m.popup.content?.querySelector("strong")?.textContent?.endsWith(title))!;
 
 const noLegs: LegLookup = () => undefined;
@@ -147,7 +148,8 @@ describe("TripMap", () => {
   it("draws every day's numbered stops, the stay, flights, and fits the view", async () => {
     setup();
     await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
-    expect(labels().sort()).toEqual(["1", "1", "2", "✈", "✈", "🛏"].sort());
+    expect(labels().sort()).toEqual(["1", "1", "2", "Airport", "Airport", "Stay"].sort());
+    expect(live().filter((m) => !m.el.textContent).every((m) => m.el.querySelector("svg path"))).toBe(true);
     expect([...state.layers.keys()].sort()).toEqual(
       ["planaway-day-1", "planaway-day-1-straight", "planaway-day-2", "planaway-day-2-straight", "planaway-flight-0"].sort(),
     );
@@ -206,7 +208,7 @@ describe("TripMap", () => {
     const focus = setup();
     await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
     byTitle("Pontocho dinner").el.click();
-    expect(focus.get()).toMatchObject({ day: 1, range: { day: 1, from: 2, to: 2 }, docked: false });
+    expect(focus.get()).toMatchObject({ day: 1, range: { day: 1, from: 2, to: 2 } });
     await vi.waitFor(() => expect(byTitle("Pontocho dinner").opened).toBe(true));
     expect(byTitle("Nishiki Market").el).toHaveClass("dim");
     expect(byTitle("Pontocho dinner").el).not.toHaveClass("dim");
@@ -265,12 +267,85 @@ describe("TripMap", () => {
     expect(reveal).toHaveBeenCalledWith("a3");
   });
 
-  it("keeps the map in view on request", async () => {
+  it("picks a stay from its pin and frames it, and lets go on a second click", async () => {
     const focus = setup();
     await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
-    await userEvent.click(screen.getByRole("button", { name: /Keep in view/ }));
-    expect(focus.get().docked).toBe(true);
-    expect(screen.getByRole("button", { name: /Keep in view/ })).toHaveAttribute("aria-pressed", "true");
+    const fits = state.fitBounds.length;
+    act(() => byTitle("Gion Ryokan").el.click());
+    expect(focus.get().spot).toBe("l1");
+    await vi.waitFor(() => expect(byTitle("Gion Ryokan").opened).toBe(true));
+    expect(byTitle("Gion Ryokan").el).toHaveClass("picked");
+    expect(state.fitBounds).toHaveLength(fits + 1);
+    expect(screen.getByText("Stay: Gion Ryokan")).toBeInTheDocument();
+    act(() => byTitle("Gion Ryokan").el.click());
+    expect(focus.get().spot).toBeNull();
+  });
+
+  it("shows a picked flight across all days, both airports lit up together", async () => {
+    const focus = setup();
+    await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
+    act(() => focus.showDay(1));
+    act(() => focus.pickSpot("f1"));
+    await vi.waitFor(() => expect(focus.get().day).toBeNull());
+    await vi.waitFor(() => expect(state.layers.get("planaway-flight-0")!.paint["line-width"]).toBe(3.5));
+    const airports = live().filter((m) => m.el.getAttribute("aria-label")!.startsWith("Airport"));
+    expect(airports.map((m) => m.el.classList.contains("picked"))).toEqual([true, true]);
+    act(() => focus.hover("f1"));
+    expect(airports.every((m) => m.el.classList.contains("hover"))).toBe(true);
+    // An airport's popup leads back to its flight.
+    const reveal = vi.spyOn(focus, "reveal");
+    const button = [...airports[0].popup.content!.querySelectorAll("button")].find((b) => b.textContent === "Show in itinerary")!;
+    button.click();
+    expect(reveal).toHaveBeenCalledWith("f1");
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(focus.get().spot).toBeNull();
+  });
+
+  it("finds a place by name and picks it on the map", async () => {
+    const focus = setup();
+    await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
+    const box = screen.getByRole("combobox", { name: "Find a place on the map" });
+    await userEvent.type(box, "todai");
+    const option = screen.getByRole("option", { name: /Todai-ji/ });
+    expect(option).toHaveTextContent("Day 2 · Stop 1");
+    await userEvent.click(option);
+    expect(focus.get()).toMatchObject({ day: 2, range: { day: 2, from: 1, to: 1 } });
+    expect(box).toHaveValue("");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("searches from the keyboard, and says when nothing matches", async () => {
+    const focus = setup();
+    await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
+    const box = screen.getByRole("combobox", { name: "Find a place on the map" });
+    await userEvent.type(box, "zzz");
+    expect(screen.getByText("Nothing on the map by that name")).toBeInTheDocument();
+    await userEvent.clear(box);
+    // "day 1" matches both of that day's stops (and Day 2's stop 1); the second is one arrow away.
+    await userEvent.type(box, "day 1");
+    expect(screen.getAllByRole("option")).toHaveLength(3);
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(focus.get().range).toEqual({ day: 1, from: 2, to: 2 });
+    await userEvent.type(box, "gion");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("says how to use it until something is picked", async () => {
+    const focus = setup();
+    await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
+    expect(screen.getByText("Select any item in the itinerary to locate it on the map.")).toBeInTheDocument();
+    act(() => focus.pickSpot("l1"));
+    expect(screen.queryByText(/Select any item/)).toBeNull();
+  });
+
+  it("hides the map on request, remembered in this browser", async () => {
+    const focus = setup();
+    await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
+    await userEvent.click(screen.getByRole("button", { name: "Hide map" }));
+    expect(focus.get().docked).toBe(false);
+    expect(localStorage.getItem("planaway:map-hidden")).toBe("1");
+    localStorage.clear();
   });
 
   it("lights up a pin while its stop is hovered in the itinerary", async () => {
@@ -291,7 +366,7 @@ describe("TripMap", () => {
     // Unwrapped next to Kyoto (≈135°E): SFO sits at 237.6° rather than -122.4°.
     expect(path[0][0]).toBeCloseTo(237.62, 1);
     for (let i = 1; i < path.length; i++) expect(Math.abs(path[i][0] - path[i - 1][0])).toBeLessThan(10);
-    const sfoPin = live().find((m) => m.el.textContent === "✈" && m.lngLat[1] > 37)!;
+    const sfoPin = live().find((m) => m.el.getAttribute("aria-label")!.startsWith("Airport") && m.lngLat[1] > 37)!;
     expect(sfoPin.lngLat[0]).toBeCloseTo(237.62, 1);
   });
 
@@ -300,7 +375,7 @@ describe("TripMap", () => {
     await vi.waitFor(() => expect(state.markers.length).toBeGreaterThan(0));
     await userEvent.click(screen.getByRole("button", { name: "Day 2" }));
     expect(screen.getByRole("button", { name: "Day 2" })).toHaveAttribute("aria-pressed", "true");
-    expect(labels().sort()).toEqual(["1", "🛏"]);
+    expect(labels().sort()).toEqual(["1", "Stay"]);
     expect([...state.layers.keys()]).toEqual(["planaway-day-2", "planaway-day-2-straight"]);
     expect(state.layers.get("planaway-day-2-straight")!.features).toHaveLength(2);
 
@@ -356,4 +431,29 @@ it("names every pin for screen readers", async () => {
   expect(live().map((m) => m.el.getAttribute("aria-label")).sort()).toEqual(
     ["Airport: KIX", "Airport: SFO", "Day 1, stop 1: Nishiki Market", "Day 1, stop 2: Pontocho dinner", "Day 2, stop 1: Todai-ji", "Stay: Gion Ryokan"].sort(),
   );
+});
+
+describe("searchRoute", () => {
+  const items = searchItems(buildRoute(sampleItinerary(), fullLookup()));
+
+  it("lists stays, then each day's stops, then flights", () => {
+    expect(items.map((i) => i.label)).toEqual(["Gion Ryokan", "Nishiki Market", "Pontocho dinner", "Todai-ji", "SFO → KIX"]);
+  });
+
+  it("matches every word, ignoring case and accents", () => {
+    expect(searchRoute(items, "NISHIKI").map((i) => i.label)).toEqual(["Nishiki Market"]);
+    expect(searchRoute(items, "tōdai").map((i) => i.label)).toEqual(["Todai-ji"]);
+    expect(searchRoute(items, "stay gion").map((i) => i.label)).toEqual(["Gion Ryokan"]);
+    expect(searchRoute(items, "flight").map((i) => i.label)).toEqual(["SFO → KIX"]);
+    expect(searchRoute(items, "  ")).toEqual([]);
+  });
+});
+
+describe("summarize", () => {
+  const route = buildRoute(sampleItinerary(), fullLookup());
+
+  it("names a picked stay or flight", () => {
+    expect(summarize(route, noLegs, null, null, false, "l1")).toEqual({ title: "Stay: Gion Ryokan", detail: "Gion", clearable: true });
+    expect(summarize(route, noLegs, null, null, false, "f1")).toEqual({ title: "Flight: SFO → KIX", detail: null, clearable: true });
+  });
 });

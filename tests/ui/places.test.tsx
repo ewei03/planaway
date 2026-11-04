@@ -1,7 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CoverPhotos, PlaceThumb, PhotoViewer, credit, useLegs, usePlaces } from "@/components/places";
+import { CoverPhotos, PlaceThumb, PhotoViewer, credit, useFoundPlaces, useLegs, usePlaces } from "@/components/places";
 import { buildRoute, dayPath, legKey, normalizeQuery, placeQueries, type Route } from "@/lib/route";
 import { fakePlace, fullLookup, sampleItinerary } from "../fixtures";
 import { mockFetch } from "./fixtures";
@@ -227,5 +227,50 @@ describe("useLegs", () => {
     expect(latest.loading).toBe(false);
     const [stay, first] = dayPath(route.days[0]);
     expect(latest.legs(stay, first)).toBeUndefined();
+  });
+});
+
+describe("useFoundPlaces", () => {
+  let latest: ReturnType<typeof useFoundPlaces>;
+  const it0 = sampleItinerary();
+  const full = fullLookup();
+  // Todai-ji (day 2) wasn't found by the itinerary's search.
+  const searched = (q: string) => (q.startsWith("Todai-ji") ? null : full(q));
+  function Harness() {
+    latest = useFoundPlaces(it0, searched);
+    return null;
+  }
+  const todaiji = it0.days[1].activities[0];
+  const found = { ...fakePlace("Todai-ji", 9), guess: true };
+
+  it("looks for an activity near the rest of its day, and adds what it finds", async () => {
+    const fetch = mockFetch(() => ({ place: found }));
+    render(<Harness />);
+    expect(latest.lookup("Todai-ji, Nara")).toBeNull();
+    let ok = false;
+    await act(async () => {
+      ok = await latest.find(2, todaiji);
+    });
+    expect(ok).toBe(true);
+    const url = new URL(String(fetch.mock.calls[0][0]), "http://localhost");
+    expect(url.pathname).toBe("/api/places/near");
+    expect(url.searchParams.get("q")).toBe("Todai-ji");
+    // Day 2 has no other activities, so near its town.
+    const nara = full("area:Nara")!;
+    expect([Number(url.searchParams.get("lat")), Number(url.searchParams.get("lng"))]).toEqual([nara.lat, nara.lng]);
+    expect(latest.lookup("todai-ji,  nara")).toEqual(found);
+    // Everything else still comes from the itinerary's search.
+    expect(latest.lookup("Nishiki Market, Kyoto")).toBe(full("Nishiki Market, Kyoto"));
+  });
+
+  it("reports nothing found", async () => {
+    mockFetch(() => ({ place: null }));
+    render(<Harness />);
+    let ok = true;
+    await act(async () => {
+      ok = await latest.find(2, todaiji);
+    });
+    expect(ok).toBe(false);
+    expect(latest.lookup("Todai-ji, Nara")).toBeNull();
   });
 });

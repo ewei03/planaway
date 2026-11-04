@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
+  activityQuery,
+  areaQuery,
   dayPath,
   legKey,
   normalizeQuery,
@@ -29,6 +31,43 @@ export const MapsProvider = MapsContext.Provider;
 export const useMapsConfig = () => useContext(MapsContext);
 
 // ---------- Place lookups ----------
+
+type Activity = Itinerary["days"][number]["activities"][number];
+
+/** Finds an activity the map couldn't place; resolves to whether it was found. */
+export type FindPlace = (day: number, activity: Activity) => Promise<boolean>;
+
+/**
+ * Activities the itinerary's search couldn't place can be looked for on
+ * request, by name near the rest of their day (see findNear on the server).
+ * A match joins `lookup` as that activity's place, flagged as a guess, for as
+ * long as this page is open.
+ */
+export function useFoundPlaces(itinerary: Itinerary | null, lookup: PlaceLookup): { lookup: PlaceLookup; find: FindPlace } {
+  const [found, setFound] = useState<Map<string, Place>>(() => new Map());
+  const merged = useCallback<PlaceLookup>((q) => found.get(normalizeQuery(q)) ?? lookup(q), [found, lookup]);
+
+  const find = useCallback<FindPlace>(
+    async (dayNumber, activity) => {
+      const day = itinerary?.days.find((d) => d.day === dayNumber);
+      const query = day && activityQuery(activity, day);
+      if (!itinerary || !day || !query) return false;
+      // Near the day's other activities, or else the day's town, or the trip's first destination.
+      const near =
+        day.activities.map((a) => (a === activity ? null : activityQuery(a, day))).map((q) => (q ? merged(q) : null)).find(Boolean) ??
+        merged(areaQuery(day.location)) ??
+        (itinerary.destinations[0] ? merged(areaQuery(itinerary.destinations[0])) : null);
+      if (!near) return false;
+      const params = new URLSearchParams({ q: activity.name, lat: String(near.lat), lng: String(near.lng) });
+      const { place } = await api<{ place: Place | null }>(`/api/places/near?${params}`);
+      if (!place) return false;
+      setFound((prev) => new Map(prev).set(normalizeQuery(query), place));
+      return true;
+    },
+    [itinerary, merged],
+  );
+  return { lookup: merged, find };
+}
 
 /** Lookups wait for the itinerary to settle while the agent streams revisions. */
 const DEBOUNCE_MS = 400;

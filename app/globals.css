@@ -36,6 +36,7 @@
    The two blocks must stay identical. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --day-lift: 35%;
     --bg: #161614;
     --surface: #1f1f1c;
     --surface-2: #2a2a26;
@@ -62,6 +63,7 @@
   }
 }
 :root[data-theme="dark"] {
+  --day-lift: 35%;
   --bg: #161614;
   --surface: #1f1f1c;
   --surface-2: #2a2a26;
@@ -949,6 +951,7 @@ a.btn.block { display: block; }
   position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--danger);
 }
+.map-pin svg { display: block; }
 .map-pin {
   display: grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px;
   color: #fff; font: 700 12px/1 system-ui, sans-serif; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
@@ -964,11 +967,25 @@ a.btn.block { display: block; }
 .map-pin { cursor: pointer; transition: scale 0.15s ease, opacity 0.15s ease; }
 .map-pin.dim { opacity: 0.4; }
 .map-pin.hover { scale: 1.3; z-index: 2; }
+.map-pin.picked { scale: 1.2; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 0 0 6px rgba(29, 28, 26, 0.35); }
 .map-leg {
   pointer-events: none; white-space: nowrap; padding: 2px 7px; border-radius: 999px;
   background: #fff; color: #1d1c1a; font: 600 11px/1.3 system-ui, sans-serif; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .map-toolbar { display: flex; align-items: flex-start; gap: 6px 8px; flex-wrap: wrap; }
+/* Find a place on the map: a search box with its matches listed under it. */
+.map-search { position: relative; flex: 1 1 200px; max-width: 280px; }
+.map-search input { width: 100%; min-height: 30px; padding: 4px 12px; border-radius: 999px; font-size: 13px; }
+.map-search-list {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 6; width: max(100%, 280px); max-height: 220px; overflow-y: auto;
+  margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg);
+}
+.map-search-list li { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.map-search-list li.active { background: var(--surface-2); }
+.map-search-list .day-dot { flex: none; margin: 0; }
+.map-search-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.map-search-detail { flex: none; color: var(--muted); font-size: 12px; }
+.map-search-list .map-search-empty { color: var(--muted); cursor: default; }
 .map-dock { margin-left: auto; white-space: nowrap; }
 /* Under the map, not over it: a docked map is short, and an overlay would cover pins and popups. */
 .map-summary {
@@ -978,6 +995,7 @@ a.btn.block { display: block; }
 .map-summary-text { display: flex; flex-direction: column; min-width: 0; }
 .map-summary-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-summary-text span { color: var(--muted); }
+.map-hint { margin-bottom: 0; color: var(--muted); }
 /* Docked: the route stays at the top of the itinerary while it scrolls, a little shorter. */
 /* Up against the scroller's top edge, past its padding, so nothing scrolls by above it. */
 .itinerary > .info-box.stuck { position: sticky; top: -20px; z-index: 4; box-shadow: var(--shadow-lg); }
@@ -987,13 +1005,15 @@ a.btn.block { display: block; }
 
 /* Timeline stops: badges in the day's color, matching the map's pins. */
 .stop-badge {
+  --day-ink: color-mix(in srgb, var(--day), #fff var(--day-lift, 0%));
   display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; cursor: pointer;
-  border: 2px solid var(--day); background: transparent; color: var(--day); font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1;
+  border: 2px solid var(--day-ink); background: transparent; color: var(--day-ink); font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1;
 }
 .stop-badge:hover { background: color-mix(in srgb, var(--day) 14%, transparent); }
 .stop-badge[aria-pressed="true"] { background: var(--day); color: #fff; }
 .stop-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .act-card { transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.act.mapped .act-card { cursor: pointer; }
 .act.map-hover .act-card { border-color: var(--day); }
 .act.picked .act-card { border-color: var(--day); box-shadow: 0 0 0 1px var(--day); }
 .act.flash .act-card { animation: stop-flash 1.5s ease; }
@@ -1004,6 +1024,19 @@ a.btn.block { display: block; }
   border: 1px dashed var(--border); background: transparent; color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1.5;
 }
 .act-leg:hover { border-color: var(--day); color: var(--text); }
+/* Activities the map couldn't place: a click looks for them. */
+.act.findable .act-card { cursor: pointer; }
+/* Clickable cards and rows: a focus ring for keyboards, and a pulse while an activity is looked for. */
+.act.mapped .act-card:focus-visible, .act.findable .act-card:focus-visible, .row.mapped:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.act.finding .act-card { cursor: progress; animation: find-pulse 1s ease-in-out infinite alternate; }
+@keyframes find-pulse { to { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .act.finding .act-card { animation: none; opacity: 0.7; } }
+/* Stays and flights on the map: the row shows it there, and lights up with its pin. */
+.row.mapped { cursor: pointer; transition: background-color 0.15s ease, box-shadow 0.15s ease; }
+.row.mapped.map-hover { background: var(--surface-2); }
+.row.picked { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
+.row.flash { animation: row-flash 1.5s ease; }
+@keyframes row-flash { 0%, 40% { background: var(--accent-soft); } }
 .act-leg.picked { border-style: solid; border-color: var(--day); background: color-mix(in srgb, var(--day) 12%, transparent); color: var(--text); }
 
 @media (max-width: 1100px) {

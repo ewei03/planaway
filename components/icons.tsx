@@ -123,9 +123,21 @@ export const UserPlusIcon = ({ size }: P) => (
     <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M19 8v6M16 11h6" />
   </Icon>
 );
+/** Drawings shared with the route map, which builds its pins without React. */
+export const PLANE_PATHS = ["M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"];
+export const BED_PATHS = ["M3 6v13M3 15h18v4M21 15v-2.5a3 3 0 0 0-3-3h-8V15", "M6.5 10.5a1.75 1.75 0 1 1 0 3.5 1.75 1.75 0 0 1 0-3.5z"];
 export const PlaneIcon = ({ size }: P) => (
   <Icon size={size}>
-    <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" />
+    {PLANE_PATHS.map((d) => (
+      <path key={d} d={d} />
+    ))}
+  </Icon>
+);
+export const BedIcon = ({ size }: P) => (
+  <Icon size={size}>
+    {BED_PATHS.map((d) => (
+      <path key={d} d={d} />
+    ))}
   </Icon>
 );
 export const WalletIcon = ({ size }: P) => (

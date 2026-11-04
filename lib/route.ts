@@ -27,6 +27,8 @@ export interface Place {
   /** The place on openstreetmap.org. */
   mapsUrl: string | null;
   photos: PlacePhoto[];
+  /** Found by name near the day's other places when asked (see findNear), so a best match rather than an exact one. */
+  guess?: boolean;
 }
 
 /** Returns the place for a query: null if nothing was found, undefined if not looked up yet. */
@@ -170,9 +172,12 @@ export function buildRoute(it: Itinerary, lookup: PlaceLookup): Route {
   return { days, flights, lodging, points };
 }
 
-/** One color per day, cycling: the day's line and pins on the map, and its stop badges in the timeline. */
-export const DAY_COLORS = ["#0f6e63", "#c2410c", "#4f46e5", "#b91c1c", "#0369a1", "#a16207", "#7e22ce", "#be185d"];
+/** One color per day, cycling: cool, muted tones that keep white numbers readable on the map's pins and the timeline's badges. */
+export const DAY_COLORS = ["#3f7377", "#4a6491", "#5b7d68", "#6a6299", "#3f6c8c", "#7a6a8f", "#58798c", "#5c6a7e"];
 export const dayColor = (day: number) => DAY_COLORS[(day - 1) % DAY_COLORS.length];
+/** Stays and flights on the map, in quieter slate greys than the days. */
+export const STAY_COLOR = "#33404d";
+export const FLIGHT_COLOR = "#6f7d8c";
 
 // ---------- Travel between stops ----------
 

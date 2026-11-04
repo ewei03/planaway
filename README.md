@@ -44,7 +44,7 @@ The itinerary shows a route map and photos of destinations, activities, and stay
 - **Photos:** when a place's OpenStreetMap entry links to Wikidata, its image comes from [Wikimedia Commons](https://commons.wikimedia.org), shown with its author and license.
 - **Routes:** [OSRM](https://project-osrm.org) on the [FOSSGIS servers](https://routing.openstreetmap.de) finds the way between each day's stops: on foot for hops up to 2 km, by road beyond that. The map draws the streets, and the timeline shows how long each leg takes.
 
-The map and the itinerary work together. Each stop in the timeline has a numbered badge matching its pin: click one to show it on the map, and click another stop of the same day to see the way between them, with the total time and distance. The travel time between two activities does the same for that leg. Picking from the itinerary keeps the map docked at the top while you scroll; a pin's popup has "Show in itinerary" to jump back.
+The map and the itinerary work together. Each stop in the timeline has a numbered badge matching its pin: click one to show it on the map, and click another stop of the same day to see the way between them, with the total time and distance. The travel time between two activities does the same for that leg. Clicking anywhere on an activity's card, a stay, or a flight (or pressing Enter on it) does the same. The map stays at the top of the itinerary while you scroll, unless you hide it; a pin's popup has "Show in itinerary" to jump back. "Find a place…" above the map searches every stop, stay, and flight by name. Clicking an activity the map couldn't place searches for it by name near the rest of its day (with [Photon](https://photon.komoot.io), within 30 km) and adds the closest match to the map, marked as such, for as long as the page is open.
 
 The public Nominatim server allows one request per second for the whole app, so lookups are paced, a few new places per request. Pins and photos fill in over a few seconds for a new trip. Results are cached in the database for 30 days, and revising a plan only looks up new places. Famous sights and neighborhoods are found reliably; small restaurants and hotels sometimes aren't, and then simply have no pin or photo.
 
@@ -134,7 +134,7 @@ Settings in `.env`:
 | `MAP_STYLE_URL` | OpenFreeMap "liberty" | MapLibre style for the route map |
 | `NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Place search |
 | `NOMINATIM_EMAIL` | (unset) | Contact address sent to Nominatim |
-| `PHOTON_URL` | `https://photon.komoot.io` | Starting point suggestions in Settings |
+| `PHOTON_URL` | `https://photon.komoot.io` | Starting point suggestions in Settings, and finding activities the map missed |
 | `ROUTING_URL` | `https://routing.openstreetmap.de` | Routes between stops (OSRM, with `/routed-foot` and `/routed-car`) |
 | `CONTACT_EMAIL` | (unset) | Address shown on the Contact, Privacy, and Terms pages |
 | `PLANAWAY_EFFORT` | `medium` | `low` to `max`. Higher means more thorough research and higher cost. |

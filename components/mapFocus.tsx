@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
 // What the route map is focused on, shared by the map and the itinerary so
 // either can drive the other: pick stops in the timeline and the map follows;
@@ -19,7 +19,9 @@ export interface FocusState {
   day: number | null;
   /** Picked stops within `day`; null when none are picked. */
   range: StopRange | null;
-  /** The map stays in view at the top of the itinerary while it scrolls. */
+  /** A picked stay or flight (its id), when that's what the map is on instead of a day's stops. */
+  spot: string | null;
+  /** The map is shown, in view at the top of the itinerary while it scrolls; false when it's hidden. */
   docked: boolean;
 }
 
@@ -47,19 +49,21 @@ export interface MapFocus {
   showDay: (day: number | null) => void;
   /** Picks stops; from the itinerary, the map docks so it stays in sight. */
   pick: (range: StopRange | null, opts?: { dock?: boolean }) => void;
+  /** Picks a stay or a flight by id (dropping picked stops); `day` changes the day shown. */
+  pickSpot: (id: string | null, opts?: { dock?: boolean; day?: number | null }) => void;
   setDocked: (docked: boolean) => void;
   /** Hovering a stop in one place lights it up in the other. Straight to the DOM: no re-render. */
   hover: (stopId: string | null) => void;
-  /** The map registers each pin's element, so hovering a stop can light up its pin. */
+  /** The map registers each pin's element, so hovering a stop can light up its pin. A flight's two airports both register under its id. */
   registerPin: (stopId: string, el: HTMLElement) => () => void;
   /** Scrolls the itinerary to an activity and flashes it. */
   reveal: (stopId: string) => void;
 }
 
 export function createMapFocus(): MapFocus {
-  let state: FocusState = { day: null, range: null, docked: false };
+  let state: FocusState = { day: null, range: null, spot: null, docked: true };
   const listeners = new Set<() => void>();
-  const pins = new Map<string, HTMLElement>();
+  const pins = new Map<string, Set<HTMLElement>>();
   let hovered: string | null = null;
 
   const set = (next: Partial<FocusState>) => {
@@ -69,7 +73,7 @@ export function createMapFocus(): MapFocus {
   const stopEls = (id: string) => document.querySelectorAll<HTMLElement>(`[data-stop="${CSS.escape(id)}"]`);
   const light = (id: string | null, on: boolean) => {
     if (!id) return;
-    pins.get(id)?.classList.toggle("hover", on);
+    pins.get(id)?.forEach((el) => el.classList.toggle("hover", on));
     stopEls(id).forEach((el) => el.classList.toggle("map-hover", on));
   };
 
@@ -79,8 +83,10 @@ export function createMapFocus(): MapFocus {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    showDay: (day) => set({ day, range: null }),
-    pick: (range, opts) => set({ range, day: range ? range.day : state.day, docked: opts?.dock && range ? true : state.docked }),
+    showDay: (day) => set({ day, range: null, spot: null }),
+    pick: (range, opts) => set({ range, spot: null, day: range ? range.day : state.day, docked: opts?.dock && range ? true : state.docked }),
+    pickSpot: (spot, opts) =>
+      set({ spot, range: null, day: opts?.day !== undefined ? opts.day : state.day, docked: opts?.dock && spot ? true : state.docked }),
     setDocked: (docked) => set({ docked }),
     hover: (id) => {
       light(hovered, false);
@@ -88,10 +94,12 @@ export function createMapFocus(): MapFocus {
       light(id, true);
     },
     registerPin: (id, el) => {
-      pins.set(id, el);
+      const set = pins.get(id) ?? new Set();
+      pins.set(id, set.add(el));
       if (hovered === id) el.classList.add("hover");
       return () => {
-        if (pins.get(id) === el) pins.delete(id);
+        set.delete(el);
+        if (!set.size && pins.get(id) === set) pins.delete(id);
       };
     },
     reveal: (id) => {
@@ -112,6 +120,27 @@ export function createMapFocus(): MapFocus {
       setTimeout(() => el.classList.remove("flash"), 1600);
     },
   };
+}
+
+const MAP_HIDDEN_KEY = "planaway:map-hidden";
+
+/** Remembers, in this browser, whether the map was hidden or shown again. */
+export function rememberMapShown(shown: boolean) {
+  try {
+    if (shown) localStorage.removeItem(MAP_HIDDEN_KEY);
+    else localStorage.setItem(MAP_HIDDEN_KEY, "1");
+  } catch {}
+}
+
+/** The map starts shown; hide it if this browser hid it last time. Read after mount so the first render matches the server's. */
+export function useRememberedMap(focus: MapFocus) {
+  useEffect(() => {
+    let hidden = false;
+    try {
+      hidden = localStorage.getItem(MAP_HIDDEN_KEY) === "1";
+    } catch {}
+    if (hidden) focus.setDocked(false);
+  }, [focus]);
 }
 
 const FocusContext = createContext<MapFocus | null>(null);

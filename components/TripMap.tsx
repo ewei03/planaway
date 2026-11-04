@@ -2,9 +2,11 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   DAY_COLORS,
+  FLIGHT_COLOR,
+  STAY_COLOR,
   dayColor,
   dayStops,
   formatDistance,
@@ -18,7 +20,8 @@ import {
   type Stop,
 } from "@/lib/route";
 import { safeUrl } from "./client";
-import { useFocusValue, useMapFocus, type MapFocus, type StopRange } from "./mapFocus";
+import { BED_PATHS, PLANE_PATHS } from "./icons";
+import { rememberMapShown, useFocusValue, useMapFocus, type MapFocus, type StopRange } from "./mapFocus";
 import { credit, useMapsConfig } from "./places";
 
 // The route map: numbered stops and each day's way between them, stays, and
@@ -47,6 +50,7 @@ export function TripMap({ route, legs, loading, routing = false }: Props) {
   const focus = useMapFocus();
   const day = useFocusValue((s) => s.day);
   const range = useFocusValue((s) => s.range);
+  const spot = useFocusValue((s) => s.spot);
   const docked = useFocusValue((s) => s.docked);
   const mappedDays = route.days.filter((d) => d.stops.length > 0);
 
@@ -57,12 +61,21 @@ export function TripMap({ route, legs, loading, routing = false }: Props) {
     else if (range && (!shown || range.from < 1 || range.to > shown.stops.length || range.from > range.to)) focus.pick(null);
   }, [day, range, route, focus]);
 
-  const summary = summarize(route, legs, day, range, routing);
+  // A picked stay or flight: show every day unless the day on screen has it (flights are drawn only for all days).
+  useEffect(() => {
+    if (!spot) return;
+    const stay = route.lodging.some((s) => s.id === spot);
+    if (!stay && !route.flights.some((f) => f.id === spot)) focus.pickSpot(null);
+    else if (day !== null && (!stay || route.days.find((d) => d.day === day)?.lodging?.id !== spot)) focus.pickSpot(spot, { day: null });
+  }, [spot, day, route, focus]);
+
+  const summary = summarize(route, legs, day, range, routing, spot);
 
   return (
     <div className="trip-map">
       {route.points.length > 0 && (
         <div className="map-toolbar">
+          <MapSearch route={route} focus={focus} />
           {mappedDays.length > 1 && (
             <div className="map-days" role="group" aria-label="Show day on map">
               <button className={`chip-btn ${day === null ? "active" : ""}`} aria-pressed={day === null} onClick={() => focus.showDay(null)}>
@@ -83,18 +96,146 @@ export function TripMap({ route, legs, loading, routing = false }: Props) {
             </div>
           )}
           <button
-            className={`chip-btn map-dock ${docked ? "active" : ""}`}
-            aria-pressed={docked}
-            title="Keep the map at the top while you scroll the itinerary"
-            onClick={() => focus.setDocked(!docked)}
+            className="chip-btn map-dock"
+            onClick={() => {
+              rememberMapShown(false);
+              focus.setDocked(false);
+            }}
           >
-            📌 Keep in view
+            Hide map
           </button>
         </div>
       )}
-      <MapView styleUrl={styleUrl} route={route} legs={legs} day={day} range={range} docked={docked} focus={focus} summary={summary} />
+      <MapView
+        styleUrl={styleUrl}
+        route={route}
+        legs={legs}
+        day={day}
+        range={range}
+        spot={spot}
+        docked={docked}
+        focus={focus}
+        summary={summary}
+        hint={route.points.length > 0}
+      />
       {loading && <div className="map-status muted small">Finding places…</div>}
       {!loading && route.points.length === 0 && <div className="map-status muted small">No places to show yet.</div>}
+    </div>
+  );
+}
+
+/** Something on the map to search for: an activity, a stay, or a flight. */
+interface SearchItem {
+  key: string;
+  label: string;
+  detail: string;
+  color: string;
+  pick: (focus: MapFocus) => void;
+}
+
+/** Every place on the map, in itinerary order: stays, then each day's stops, then flights. */
+export function searchItems(route: Route): SearchItem[] {
+  return [
+    ...route.lodging.map((s) => ({ key: `stay:${s.id}`, label: s.label, detail: `Stay${s.detail ? ` · ${s.detail}` : ""}`, color: STAY_COLOR, pick: (f: MapFocus) => f.pickSpot(s.id) })),
+    ...route.days.flatMap((d) =>
+      d.stops.map((s) => ({
+        key: `stop:${s.id}`,
+        label: s.label,
+        detail: `Day ${d.day} · Stop ${s.order}`,
+        color: dayColor(d.day),
+        pick: (f: MapFocus) => f.pick({ day: d.day, from: s.order!, to: s.order! }),
+      })),
+    ),
+    ...route.flights.map((fl) => ({ key: `flight:${fl.id}`, label: fl.label, detail: "Flight", color: FLIGHT_COLOR, pick: (f: MapFocus) => f.pickSpot(fl.id, { day: null }) })),
+  ];
+}
+
+/** Lowercase without accents, so "kyoto" finds "Kyōto". */
+const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Items whose name (or day, or kind) contains every word typed. */
+export function searchRoute(items: SearchItem[], query: string): SearchItem[] {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  return items.filter((it) => {
+    const text = fold(`${it.label} ${it.detail}`);
+    return words.every((w) => text.includes(w));
+  });
+}
+
+const MAX_RESULTS = 8;
+
+/** Find a place on the map by name; picking one shows it there and marks it in the itinerary. */
+function MapSearch({ route, focus }: { route: Route; focus: MapFocus }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const listId = useId();
+  const results = searchRoute(searchItems(route), query).slice(0, MAX_RESULTS);
+  const showList = open && query.trim() !== "";
+
+  const choose = (item: SearchItem) => {
+    item.pick(focus);
+    setQuery("");
+    setOpen(false);
+  };
+
+  return (
+    <div className="map-search">
+      <input
+        type="search"
+        role="combobox"
+        aria-label="Find a place on the map"
+        aria-expanded={showList}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={showList && results[active] ? `${listId}-${active}` : undefined}
+        placeholder="Find a place…"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setActive(0);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            if (!results.length) return;
+            setOpen(true);
+            setActive((i) => (i + (e.key === "ArrowDown" ? 1 : results.length - 1)) % results.length);
+          } else if (e.key === "Enter" && showList && results[active]) {
+            e.preventDefault();
+            choose(results[active]);
+          } else if (e.key === "Escape" && showList) {
+            e.preventDefault();
+            setOpen(false);
+          }
+        }}
+      />
+      {showList && (
+        <ul className="map-search-list" role="listbox" id={listId} aria-label="Places">
+          {results.length === 0 && <li className="map-search-empty">Nothing on the map by that name</li>}
+          {results.map((it, i) => (
+            <li
+              key={it.key}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              className={i === active ? "active" : undefined}
+              // Keep focus in the box until the click lands.
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => choose(it)}
+            >
+              <span className="day-dot" style={{ background: it.color }} aria-hidden="true" />
+              <span className="map-search-label">{it.label}</span>
+              <span className="map-search-detail">{it.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -107,7 +248,18 @@ interface Summary {
 }
 
 /** What the map is showing, in words: the day or the picked stops, and the travel involved. */
-export function summarize(route: Route, legs: LegLookup, day: number | null, range: StopRange | null, routing: boolean): Summary | null {
+export function summarize(
+  route: Route,
+  legs: LegLookup,
+  day: number | null,
+  range: StopRange | null,
+  routing: boolean,
+  spot: string | null = null,
+): Summary | null {
+  const stay = spot ? route.lodging.find((s) => s.id === spot) : undefined;
+  if (stay) return { title: `Stay: ${stay.label}`, detail: stay.detail, clearable: true };
+  const flight = spot ? route.flights.find((f) => f.id === spot) : undefined;
+  if (flight) return { title: `Flight: ${flight.label}`, detail: null, clearable: true };
   const d = day === null ? null : route.days.find((x) => x.day === day);
   if (!d || d.stops.length === 0) return null;
   if (range && range.from === range.to) {
@@ -139,11 +291,14 @@ function MapView(props: {
   legs: LegLookup;
   day: number | null;
   range: StopRange | null;
+  spot: string | null;
   docked: boolean;
   focus: MapFocus;
   summary: Summary | null;
+  /** Say how to use the map when nothing's picked. */
+  hint: boolean;
 }) {
-  const { styleUrl, route, legs, day, range, docked, focus, summary } = props;
+  const { styleUrl, route, legs, day, range, spot, docked, focus, summary, hint } = props;
   const container = useRef<HTMLDivElement>(null);
   const lib = useRef<MapLibre | null>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -162,13 +317,13 @@ function MapView(props: {
     map.current.resize();
     // Reframe when the focus or the places change, not when routes come in:
     // jump on the first draw, glide after that.
-    const frame = JSON.stringify([day, range, docked, route.points.length]);
+    const frame = JSON.stringify([day, range, spot, docked, route.points.length]);
     const fit = frame !== framed.current;
     framed.current = frame;
-    const undraw = draw(lib.current, map.current, { route, legs, day, range, focus, fit, animate: drawn.current, openPin });
+    const undraw = draw(lib.current, map.current, { route, legs, day, range, spot, focus, fit, animate: drawn.current, openPin });
     drawn.current = true;
     return undraw;
-  }, [ready, route, legs, day, range, docked, focus]);
+  }, [ready, route, legs, day, range, spot, docked, focus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,18 +364,20 @@ function MapView(props: {
   return (
     <div className="map-frame">
       <div ref={container} className="map-canvas" aria-label="Trip route map" role="region" />
-      {summary && (
+      {summary ? (
         <div className="map-summary" aria-live="polite">
           <span className="map-summary-text">
             <strong>{summary.title}</strong>
             {summary.detail && <span>{summary.detail}</span>}
           </span>
           {summary.clearable && (
-            <button className="link-btn" onClick={() => focus.pick(null)}>
+            <button className="link-btn" onClick={() => (spot ? focus.pickSpot(null) : focus.pick(null))}>
               Clear
             </button>
           )}
         </div>
+      ) : (
+        hint && <p className="map-summary map-hint">Select any item in the itinerary to locate it on the map.</p>
       )}
       {error && <div className="map-error">{error}</div>}
     </div>
@@ -232,6 +389,8 @@ interface DrawOptions {
   legs: LegLookup;
   day: number | null;
   range: StopRange | null;
+  /** A picked stay or flight. */
+  spot: string | null;
   focus: MapFocus;
   /** Fit the view to what's shown (and open a picked stop's popup). */
   fit: boolean;
@@ -243,7 +402,7 @@ const inRange = (stop: Stop, range: StopRange | null) =>
   range === null || (stop.kind === "activity" && stop.day === range.day && stop.order! >= range.from && stop.order! <= range.to);
 
 /** Draws the route; returns a function that removes it again. */
-function draw(ml: MapLibre, m: MapLibreMap, { route, legs, day, range, focus, fit, animate, openPin }: DrawOptions): () => void {
+function draw(ml: MapLibre, m: MapLibreMap, { route, legs, day, range, spot, focus, fit, animate, openPin }: DrawOptions): () => void {
   const markers: Marker[] = [];
   const layers: string[] = [];
   const sources: string[] = [];
@@ -263,8 +422,8 @@ function draw(ml: MapLibre, m: MapLibreMap, { route, legs, day, range, focus, fi
   const lngLat = (p: { lat: number; lng: number }, around = ref): [number, number] => [unwrapLng(p.lng, around), p.lat];
 
   const pinned = new Map<string, Marker>();
-  const marker = (stop: Stop, el: HTMLElement, at: [number, number] = lngLat(stop.place)) => {
-    const popup = new ml.Popup({ offset: 16, maxWidth: "240px" }).setDOMContent(infoContent(stop, focus));
+  const marker = (stop: Stop, el: HTMLElement, at: [number, number] = lngLat(stop.place), item = stop.id) => {
+    const popup = new ml.Popup({ offset: 16, maxWidth: "240px" }).setDOMContent(infoContent(stop, focus, item));
     const mk = new ml.Marker({ element: el }).setLngLat(at).setPopup(popup).addTo(m);
     markers.push(mk);
     pinned.set(`${stop.kind}:${stop.id}`, mk);
@@ -277,9 +436,27 @@ function draw(ml: MapLibre, m: MapLibreMap, { route, legs, day, range, focus, fi
     layers.push(id);
   };
 
+  let open: Marker | null = null;
+  // Stays and airports light up with their row in the itinerary, and clicking one picks it (again lets go).
+  const spotPin = (el: HTMLElement, item: string, at: [number, number]) => {
+    cleanups.push(focus.registerPin(item, el));
+    el.addEventListener("mouseenter", () => focus.hover(item));
+    el.addEventListener("mouseleave", () => focus.hover(null));
+    el.addEventListener("click", () => focus.pickSpot(spot === item ? null : item));
+    if (spot === item) {
+      el.classList.add("picked");
+      picked.push(at);
+    }
+  };
+
   // Stays: each once, for all days or for the selected day's night.
   const stays = day === null ? route.lodging : days.flatMap((d) => (d.lodging ? [d.lodging] : []));
-  for (const stop of new Set(stays)) marker(stop, pin("🛏", "#1d1c1a", `Stay: ${stop.label}`));
+  for (const stop of new Set(stays)) {
+    const el = pin(lineIcon(BED_PATHS), STAY_COLOR, `Stay: ${stop.label}`);
+    const mk = marker(stop, el);
+    spotPin(el, stop.id, lngLat(stop.place));
+    if (spot === stop.id) open = mk;
+  }
 
   // Flights only in the all-days view: they'd dwarf a single day's route.
   if (day === null) {
@@ -290,13 +467,19 @@ function draw(ml: MapLibre, m: MapLibreMap, { route, legs, day, range, focus, fi
       const id = `planaway-flight-${i}`;
       m.addSource(id, { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: path } } });
       sources.push(id);
-      addLayer(id, id, { "line-color": "#6b6860", "line-width": 2, "line-dasharray": [2, 2] });
-      marker(f.from, pin("✈", "#6b6860", `Airport: ${f.from.label}`), path[0]);
-      marker(f.to, pin("✈", "#6b6860", `Airport: ${f.to.label}`), path[path.length - 1]);
+      const width = spot === f.id ? 3.5 : 2;
+      addLayer(id, id, { "line-color": spot === f.id ? STAY_COLOR : FLIGHT_COLOR, "line-width": width, "line-dasharray": [2, 2] });
+      for (const [stop, at] of [
+        [f.from, path[0]],
+        [f.to, path[path.length - 1]],
+      ] as const) {
+        const el = pin(lineIcon(PLANE_PATHS), FLIGHT_COLOR, `Airport: ${stop.label}`);
+        marker(stop, el, at, f.id);
+        spotPin(el, f.id, at);
+      }
     });
   }
 
-  let open: Marker | null = null;
   for (const d of days) {
     if (d.stops.length === 0) continue;
     const color = dayColor(d.day);
@@ -379,18 +562,33 @@ function dayFeatures(d: DayRoute, legs: LegLookup, range: StopRange | null, lngL
  * A round marker; `label` names it for screen readers and on hover. Built with
  * DOM APIs: labels come from the web, so no innerHTML.
  */
-function pin(text: string, color: string, label: string): HTMLElement {
+function pin(content: string | SVGElement, color: string, label: string): HTMLElement {
   const el = document.createElement("div");
   el.className = "map-pin";
   el.style.background = color;
-  el.textContent = text;
+  el.append(content);
   el.title = label;
   // MapLibre names every marker "Map marker" unless one is set.
   el.setAttribute("aria-label", label);
   return el;
 }
 
-function infoContent(stop: Stop, focus: MapFocus): HTMLElement {
+/** A pin's popup; `item` is the itinerary entry it belongs to (a flight, for an airport). */
+/** A small line icon for a pin, from the app's own drawings (components/icons). */
+function lineIcon(paths: string[]): SVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [k, v] of Object.entries({ width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" }))
+    svg.setAttribute(k, v);
+  for (const d of paths) {
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+function infoContent(stop: Stop, focus: MapFocus, item: string): HTMLElement {
   const root = document.createElement("div");
   root.className = "map-info";
   const photo = stop.place.photos[0];
@@ -411,16 +609,20 @@ function infoContent(stop: Stop, focus: MapFocus): HTMLElement {
     el.textContent = sub;
     root.append(el);
   }
+  if (stop.place.guess) {
+    const el = document.createElement("div");
+    el.className = "map-info-sub";
+    el.textContent = `Closest match: ${stop.place.name}`;
+    root.append(el);
+  }
   const links = document.createElement("div");
   links.className = "map-info-links";
-  if (stop.kind === "activity") {
-    const show = document.createElement("button");
-    show.type = "button";
-    show.className = "link-btn";
-    show.textContent = "Show in itinerary";
-    show.addEventListener("click", () => focus.reveal(stop.id));
-    links.append(show);
-  }
+  const show = document.createElement("button");
+  show.type = "button";
+  show.className = "link-btn";
+  show.textContent = "Show in itinerary";
+  show.addEventListener("click", () => focus.reveal(item));
+  links.append(show);
   const href = safeUrl(stop.place.mapsUrl);
   if (href) {
     const a = document.createElement("a");

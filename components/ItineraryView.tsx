@@ -1,9 +1,9 @@
-import { createContext, memo, useContext, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
-import { activityQuery, dayColor, heroPhotos, legLabel, lodgingQuery, type Leg, type LegLookup } from "@/lib/route";
+import { createContext, memo, useContext, useEffect, useId, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { activityQuery, airportQuery, dayColor, heroPhotos, legLabel, lodgingQuery, type Leg, type LegLookup } from "@/lib/route";
 import { anchorKey, money, safeUrl, type CommentAnchor, type CommentTarget, type Itinerary } from "./client";
 import { CalendarIcon, CategoryIcon, CommentIcon, PlaneIcon, UsersIcon, WalletIcon, WeatherIcon } from "./icons";
-import { pickStop, useFocusValue, useMapFocus } from "./mapFocus";
-import { CoverPhotos, PlaceThumb, type Place, type PlaceLookup } from "./places";
+import { pickStop, rememberMapShown, useFocusValue, useMapFocus, useRememberedMap } from "./mapFocus";
+import { CoverPhotos, PlaceThumb, type FindPlace, type Place, type PlaceLookup } from "./places";
 import { TipText } from "./TipText";
 
 type Day = Itinerary["days"][number];
@@ -80,7 +80,8 @@ function InfoBox({
   count,
   tone,
   stuck = false,
-  onUnstick,
+  shown,
+  onToggle,
   children,
 }: {
   id: string;
@@ -88,13 +89,15 @@ function InfoBox({
   title: string;
   count?: number;
   tone?: "tips";
-  /** Kept in view at the top while the itinerary scrolls (the docked map); always open, and its header undocks it. */
+  /** Kept in view at the top while the itinerary scrolls (the map). */
   stuck?: boolean;
-  onUnstick?: () => void;
+  /** Opened and closed from outside rather than remembered here, e.g. the map. */
+  shown?: boolean;
+  onToggle?: () => void;
   children: ReactNode;
 }) {
   const [remembered, toggle] = useRememberedOpen(id);
-  const open = remembered || stuck;
+  const open = shown ?? remembered;
   const bodyId = useId();
 
   return (
@@ -103,8 +106,7 @@ function InfoBox({
         <button
           aria-expanded={open}
           aria-controls={bodyId}
-          onClick={stuck ? onUnstick : toggle}
-          title={stuck ? "Stop keeping the map in view" : undefined}
+          onClick={onToggle ?? toggle}
         >
           <span className="info-box-icon" aria-hidden="true">
             {icon}
@@ -156,10 +158,60 @@ function SourceLink({ title, url }: { title: string; url: string }) {
   );
 }
 
-function Row({ title, sub, price, comment, thumb }: { title: ReactNode; sub: (string | null | undefined)[]; price?: ReactNode; comment?: ReactNode; thumb?: ReactNode }) {
+/** Clicks on a card or row show it on the map, except clicks on its own links and buttons. */
+const onControl = (e: MouseEvent) => !!(e.target as HTMLElement).closest("a, button");
+
+/**
+ * A card or row that shows its place on the map when clicked, or when focused
+ * and Enter or Space is pressed. It holds its own links and buttons, so it
+ * can't be a button itself.
+ */
+function clickable(activate: () => void, label: string, pressed?: boolean) {
+  return {
+    tabIndex: 0,
+    title: label,
+    "aria-current": pressed ? ("true" as const) : undefined,
+    onClick: (e: MouseEvent) => !onControl(e) && activate(),
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      activate();
+    },
+  };
+}
+
+/** A stay or flight that's on the map, and what to call it. */
+interface RowStop {
+  id: string;
+  label: string;
+}
+
+function Row({
+  title,
+  sub,
+  price,
+  comment,
+  thumb,
+  stop,
+}: {
+  title: ReactNode;
+  sub: (string | null | undefined)[];
+  price?: ReactNode;
+  comment?: ReactNode;
+  thumb?: ReactNode;
+  stop?: RowStop;
+}) {
   const subText = sub.filter(Boolean).join(" · ");
+  const focus = useMapFocus();
+  const picked = useFocusValue((s) => !!stop && s.spot === stop.id);
   return (
-    <div className="row">
+    <div
+      className={`row ${stop ? "mapped" : ""} ${picked ? "picked" : ""}`}
+      data-stop={stop?.id}
+      onMouseEnter={stop ? () => focus.hover(stop.id) : undefined}
+      onMouseLeave={stop ? () => focus.hover(null) : undefined}
+      {...(stop ? clickable(() => focus.pickSpot(picked ? null : stop.id, { dock: true }), `Show ${stop.label} on the map`, picked) : {})}
+    >
       {thumb}
       <div className="row-main">
         <div className="row-title">{title}</div>
@@ -169,6 +221,11 @@ function Row({ title, sub, price, comment, thumb }: { title: ReactNode; sub: (st
       {comment}
     </div>
   );
+}
+
+/** Search OpenStreetMap for a place the map couldn't pin down by itself. */
+function osmSearch(query: string): string {
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(query)}`;
 }
 
 /** No photos until places are looked up (or when they aren't set up). */
@@ -182,6 +239,7 @@ type DayCardProps = {
   places: (Place | null | undefined)[];
   /** From each mapped activity to the next mapped one; undefined where there's none or it isn't routed yet. */
   legs: (Leg | null | undefined)[];
+  onFind?: FindPlace;
 } & CommentProps;
 
 /**
@@ -189,7 +247,7 @@ type DayCardProps = {
  * is open, so a day redraws only when one of its own places, or something else
  * it shows, has changed; redrawing every day for each batch was the slow part.
  */
-const DayCard = memo(function DayCard({ day, currency, places, legs, ...c }: DayCardProps) {
+const DayCard = memo(function DayCard({ day, currency, places, legs, onFind, ...c }: DayCardProps) {
   const focus = useMapFocus();
   // Only this day's picked stops, as a string, so picking on another day doesn't redraw this one.
   const picked = useFocusValue((s) => (s.range?.day === day.day ? `${s.range.from}-${s.range.to}` : ""));
@@ -201,6 +259,14 @@ const DayCard = memo(function DayCard({ day, currency, places, legs, ...c }: Day
   // From the timeline, the map docks so the picked stops stay in sight.
   const pick = (a: number, b: number) =>
     focus.pick(a === b ? pickStop(focus.get().range, day.day, a) : { day: day.day, from: a, to: b }, { dock: true });
+  // Activities the map couldn't place are looked for on a click; these are being looked for, or weren't found nearby.
+  const [finding, setFinding] = useState<Record<string, "finding" | "missing">>({});
+  const find = async (a: Day["activities"][number], key: string) => {
+    if (!onFind || finding[key]) return;
+    setFinding((f) => ({ ...f, [key]: "finding" }));
+    const found = await onFind(day.day, a);
+    setFinding(({ [key]: _, ...rest }) => (found ? rest : { ...rest, [key]: "missing" }));
+  };
 
   return (
     <div className="day">
@@ -216,11 +282,24 @@ const DayCard = memo(function DayCard({ day, currency, places, legs, ...c }: Day
           const isPicked = order !== null && order >= from && order <= to;
           const leg = order !== null ? legs[i] : undefined;
           const next = order !== null ? day.activities.find((_, j) => j > i && orders[j] !== null) : undefined;
+          const query = activityQuery(a, day);
+          const key = a.id || String(i);
+          const findable = places[i] === null && !!query && !!onFind;
+          const status = finding[key];
+          // On the map: show it. Not yet: look for it near the rest of the day. Not found nearby: OpenStreetMap's own search.
+          const card =
+            order !== null
+              ? clickable(() => pick(order, order), `Show ${a.name} on the map`, isPicked)
+              : findable && status === "missing"
+                ? clickable(() => window.open(osmSearch(query!), "_blank", "noopener,noreferrer"), `${a.name} wasn't found nearby. Search OpenStreetMap`)
+                : findable
+                  ? clickable(() => find(a, key), `Find ${a.name} on the map`)
+                  : {};
           return (
             <li
-              className={`act ${isPicked ? "picked" : ""}`}
-              key={a.id || i}
-              style={order !== null ? style : undefined}
+              className={`act ${order !== null ? "mapped" : ""} ${findable ? "findable" : ""} ${status === "finding" ? "finding" : ""} ${isPicked ? "picked" : ""}`}
+              key={key}
+              style={order !== null || findable ? style : undefined}
               data-stop={order !== null ? a.id : undefined}
               onMouseEnter={order !== null ? () => focus.hover(a.id) : undefined}
               onMouseLeave={order !== null ? () => focus.hover(null) : undefined}
@@ -229,7 +308,7 @@ const DayCard = memo(function DayCard({ day, currency, places, legs, ...c }: Day
               <span className={`act-icon cat-${a.category}`} role="img" aria-label={a.category} title={a.category}>
                 <CategoryIcon category={a.category} size={17} />
               </span>
-              <div className="act-card">
+              <div className="act-card" aria-busy={status === "finding" || undefined} {...card}>
                 <div className="act-body">
                   <PlaceThumb place={places[i]} label={a.name} />
                   <div>
@@ -341,6 +420,7 @@ function sameDay(a: DayCardProps, b: DayCardProps): boolean {
     a.currency === b.currency &&
     a.counts === b.counts &&
     a.onComment === b.onComment &&
+    a.onFind === b.onFind &&
     a.places.length === b.places.length &&
     a.places.every((p, i) => p === b.places[i]) &&
     a.legs.length === b.legs.length &&
@@ -371,13 +451,16 @@ interface ViewProps extends CommentProps {
   legs?: LegLookup;
   /** Rendered between the trip facts and the details, e.g. the route map. */
   map?: ReactNode;
+  /** Looks for an activity the map couldn't place; see useFoundPlaces. */
+  onFind?: FindPlace;
   /** Remembers which boxes this trip has collapsed; every box starts open. */
   tripId?: string;
 }
 
-export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPlaces, legs = noLegs, map, tripId }: ViewProps) {
+export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPlaces, legs = noLegs, map, onFind, tripId }: ViewProps) {
   const focus = useMapFocus();
   const docked = useFocusValue((s) => s.docked);
+  useRememberedMap(focus);
   const c = it.currency;
   const cp = { counts, onComment };
   const days = `${it.days.length} day${it.days.length === 1 ? "" : "s"}`;
@@ -414,7 +497,17 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
       </div>
 
       {map && (
-        <InfoBox id="route" icon="🗺️" title="Route" stuck={docked} onUnstick={() => focus.setDocked(false)}>
+        <InfoBox
+          id="route"
+          icon="🗺️"
+          title="Route"
+          stuck={docked}
+          shown={docked}
+          onToggle={() => {
+            rememberMapShown(!docked);
+            focus.setDocked(!docked);
+          }}
+        >
           <div className="box-pad">{map}</div>
         </InfoBox>
       )}
@@ -425,6 +518,7 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
             {it.flights.map((f, i) => (
               <Row
                 key={f.id || i}
+                stop={map && f.id && lookup(airportQuery(f.from)) && lookup(airportQuery(f.to)) ? { id: f.id, label: `the flight ${f.from} → ${f.to}` } : undefined}
                 title={<Link text={`${f.from} → ${f.to}`} url={f.booking_url} />}
                 sub={[f.date, f.carrier, f.notes]}
                 price={money(f.est_price, c)}
@@ -441,6 +535,7 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
             {it.lodging.map((l, i) => (
               <Row
                 key={l.id || i}
+                stop={map && l.id && lookup(lodgingQuery(l)) ? { id: l.id, label: l.name } : undefined}
                 title={<Link text={l.name} url={l.booking_url} />}
                 sub={[l.area, l.check_in || l.check_out ? `${l.check_in ?? "?"} → ${l.check_out ?? "?"}` : null, l.notes]}
                 price={
@@ -463,7 +558,7 @@ export function ItineraryView({ itinerary: it, counts, onComment, lookup = noPla
         <div className="box-pad">
           {it.days.map((d, i) => {
             const places = d.activities.map((a) => lookupActivity(lookup, a, d));
-            return <DayCard key={d.id || i} day={d} currency={c} places={places} legs={dayLegs(places, legs)} {...cp} />;
+            return <DayCard key={d.id || i} day={d} currency={c} places={places} legs={dayLegs(places, legs)} onFind={map ? onFind : undefined} {...cp} />;
           })}
         </div>
       </InfoBox>

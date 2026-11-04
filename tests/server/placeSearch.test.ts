@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { authMock } = vi.hoisted(() => ({ authMock: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: authMock }));
 
+import * as nearRoute from "@/app/api/places/near/route";
 import * as suggestRoute from "@/app/api/places/suggest/route";
-import { photonSuggestion, searchAirports, suggestPlaces } from "@/lib/placeSearch";
+import { findNear, photonSuggestion, searchAirports, suggestPlaces } from "@/lib/placeSearch";
 
 let photonQueries: string[];
 let photon: (q: string) => Response;
@@ -125,5 +126,89 @@ describe("GET /api/places/suggest", () => {
   it("returns suggestions", async () => {
     const res = await suggestRoute.GET(new Request("http://localhost/api/places/suggest?q=NRT"));
     expect((await res.json()).suggestions[0].label).toBe("Narita International Airport (NRT)");
+  });
+});
+
+describe("findNear", () => {
+  const kyoto = { lat: 35.0, lng: 135.76 };
+  const at = (lat: number, lng: number, properties: Record<string, unknown>) => ({ type: "Feature", geometry: { coordinates: [lng, lat] }, properties });
+  // Each test asks about a different name: answers are remembered.
+
+  it("finds the closest good match, steered toward the day's places", async () => {
+    photon = () =>
+      Response.json({ features: [at(35.004, 135.771, { osm_type: "N", osm_id: 42, osm_key: "amenity", name: "Kinkaku-ji", city: "Kyoto", country: "Japan" })] });
+    const place = await findNear("Kinkaku-ji", kyoto);
+    expect(place).toEqual({
+      id: "node/42",
+      name: "Kinkaku-ji",
+      address: "Kyoto, Japan",
+      lat: 35.004,
+      lng: 135.771,
+      mapsUrl: "https://www.openstreetmap.org/node/42",
+      photos: [],
+      guess: true,
+    });
+    const call = vi.mocked(fetch).mock.calls.at(-1)![0];
+    expect(new URL(String(call)).searchParams.get("lat")).toBe("35");
+    expect(new URL(String(call)).searchParams.get("lon")).toBe("135.76");
+  });
+
+  it("drops trailing words until something nearby turns up", async () => {
+    photon = (q) => Response.json({ features: q.trim() === "Pontocho" ? [at(35.005, 135.77, { osm_type: "W", osm_id: 7, name: "Pontocho" })] : [] });
+    const place = await findNear("Pontocho evening dinner", kyoto);
+    expect(photonQueries).toEqual(["Pontocho evening dinner", "Pontocho evening", "Pontocho"]);
+    expect(place).toMatchObject({ id: "way/7", name: "Pontocho" });
+  });
+
+  it("ignores matches far from the day, and gives up after three tries", async () => {
+    // A Pontocho in Tokyo is no help on a day in Kyoto.
+    photon = () => Response.json({ features: [at(35.68, 139.76, { osm_type: "N", osm_id: 1, name: "Pontocho" })] });
+    expect(await findNear("Late night Pontocho bar crawl", kyoto)).toBeNull();
+    expect(photonQueries).toHaveLength(3);
+  });
+
+  it("never shortens a name to a tiny word", async () => {
+    photon = () => Response.json({ features: [] });
+    await findNear("The Thing", kyoto);
+    expect(photonQueries).toEqual(["The Thing"]);
+  });
+
+  it("remembers answers, and doesn't remember failures", async () => {
+    photon = () => new Response("down", { status: 503 });
+    await expect(findNear("Gion Corner", kyoto)).rejects.toThrow("503");
+    photon = () => Response.json({ features: [at(35.0, 135.775, { osm_type: "N", osm_id: 3, name: "Gion Corner" })] });
+    expect(await findNear("Gion Corner", kyoto)).toMatchObject({ name: "Gion Corner" });
+    expect(await findNear("gion  corner", kyoto)).toMatchObject({ name: "Gion Corner" });
+    expect(photonQueries).toEqual(["Gion Corner", "Gion Corner"]);
+  });
+});
+
+describe("GET /api/places/near", () => {
+  const get = (qs: string) => nearRoute.GET(new Request(`http://localhost/api/places/near?${qs}`));
+
+  it("needs a signed-in user", async () => {
+    authMock.mockResolvedValue(null);
+    expect((await get("q=Nishiki&lat=35&lng=135.7")).status).toBe(401);
+  });
+
+  it("checks the name and coordinates", async () => {
+    expect((await get("lat=35&lng=135.7")).status).toBe(400);
+    expect((await get("q=Nishiki&lat=95&lng=135.7")).status).toBe(400);
+    expect((await get("q=Nishiki&lat=35")).status).toBe(400);
+    expect((await get("q=Nishiki&lat=abc&lng=1")).status).toBe(400);
+  });
+
+  it("returns the match, or null", async () => {
+    photon = () => Response.json({ features: [{ type: "Feature", geometry: { coordinates: [135.765, 35.005] }, properties: { osm_type: "N", osm_id: 9, name: "Nishiki Market" } }] });
+    const res = await get("q=Nishiki%20Market%20stroll&lat=35&lng=135.76");
+    expect(res.status).toBe(200);
+    expect((await res.json()).place).toMatchObject({ name: "Nishiki Market", guess: true });
+    photon = () => Response.json({ features: [] });
+    expect(await (await get("q=Nowhere%20at%20all&lat=35&lng=135.76")).json()).toEqual({ place: null });
+  });
+
+  it("says when the search is down", async () => {
+    photon = () => new Response("down", { status: 503 });
+    expect((await get("q=Down%20today&lat=35&lng=135.76")).status).toBe(502);
   });
 });

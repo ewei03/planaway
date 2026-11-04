@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMapFocus, pickStop } from "@/components/mapFocus";
+import { renderHook } from "@testing-library/react";
+import { createMapFocus, pickStop, rememberMapShown, useRememberedMap } from "@/components/mapFocus";
 
 describe("pickStop", () => {
   const r = (from: number, to: number, day = 1) => ({ day, from, to });
@@ -28,20 +29,63 @@ describe("pickStop", () => {
 });
 
 describe("createMapFocus", () => {
-  it("shows the picked stops' day, and docks only when asked", () => {
+  it("starts with the map shown, and brings a hidden map back only when asked", () => {
     const focus = createMapFocus();
+    expect(focus.get()).toEqual({ day: null, range: null, spot: null, docked: true });
     const listener = vi.fn();
     focus.subscribe(listener);
+    focus.setDocked(false);
     focus.pick({ day: 2, from: 1, to: 3 });
-    expect(focus.get()).toEqual({ day: 2, range: { day: 2, from: 1, to: 3 }, docked: false });
+    expect(focus.get()).toEqual({ day: 2, range: { day: 2, from: 1, to: 3 }, spot: null, docked: false });
     focus.pick({ day: 2, from: 1, to: 1 }, { dock: true });
     expect(focus.get().docked).toBe(true);
-    // Clearing keeps the day and the dock.
+    // Clearing keeps the day and the map.
     focus.pick(null, { dock: true });
-    expect(focus.get()).toEqual({ day: 2, range: null, docked: true });
+    expect(focus.get()).toEqual({ day: 2, range: null, spot: null, docked: true });
     focus.showDay(null);
     expect(focus.get().day).toBeNull();
-    expect(listener).toHaveBeenCalledTimes(4);
+    expect(listener).toHaveBeenCalledTimes(5);
+  });
+
+  it("remembers a hidden map in this browser", () => {
+    rememberMapShown(false);
+    const hidden = createMapFocus();
+    renderHook(() => useRememberedMap(hidden));
+    expect(hidden.get().docked).toBe(false);
+    rememberMapShown(true);
+    const shown = createMapFocus();
+    renderHook(() => useRememberedMap(shown));
+    expect(shown.get().docked).toBe(true);
+  });
+
+  it("picks a stay or flight instead of stops, and the other way round", () => {
+    const focus = createMapFocus();
+    focus.setDocked(false);
+    focus.pick({ day: 1, from: 2, to: 2 });
+    focus.pickSpot("l1", { dock: true });
+    expect(focus.get()).toEqual({ day: 1, range: null, spot: "l1", docked: true });
+    focus.pickSpot("f1", { day: null });
+    expect(focus.get().day).toBeNull();
+    focus.pick({ day: 2, from: 1, to: 1 });
+    expect(focus.get().spot).toBeNull();
+    focus.pickSpot("l1");
+    focus.showDay(1);
+    expect(focus.get().spot).toBeNull();
+  });
+
+  it("lights up every pin registered under an id, such as a flight's two airports", () => {
+    const focus = createMapFocus();
+    const [from, to] = [document.createElement("div"), document.createElement("div")];
+    focus.registerPin("f1", from);
+    const unregister = focus.registerPin("f1", to);
+    focus.hover("f1");
+    expect(from).toHaveClass("hover");
+    expect(to).toHaveClass("hover");
+    focus.hover(null);
+    unregister();
+    focus.hover("f1");
+    expect(from).toHaveClass("hover");
+    expect(to).not.toHaveClass("hover");
   });
 
   it("lights up the hovered stop's pin and cards, and only that one", () => {

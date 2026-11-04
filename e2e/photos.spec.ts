@@ -37,7 +37,8 @@ test("the route map shows numbered stops, stays, and flights", async ({ page }) 
   const map = page.locator(".trip-map");
   await expect(map.locator(".maplibregl-canvas")).toBeVisible();
   // Nishiki Market (day 1) and Todai-ji (day 2); Pontocho dinner wasn't found.
-  await expect(map.locator(".map-pin")).toHaveText(["🛏", "✈", "✈", "1", "1"], { useInnerText: true, timeout: 20_000 });
+  await expect(map.locator(".map-pin")).toHaveText(["", "", "", "1", "1"], { useInnerText: true, timeout: 20_000 });
+  await expect(map.locator('.map-pin[aria-label^="Stay"] svg, .map-pin[aria-label^="Airport"] svg')).toHaveCount(3);
 
   // Pins are named and keyboard-operable (and here, mock places overlap, so a click could hit another pin).
   await map.getByRole("button", { name: "Stay: Gion Ryokan" }).press("Enter");
@@ -48,7 +49,7 @@ test("the route map shows numbered stops, stays, and flights", async ({ page }) 
 
   // One day at a time.
   await map.getByRole("button", { name: "Day 2", exact: true }).click();
-  await expect(map.locator(".map-pin")).toHaveText(["🛏", "1"], { useInnerText: true });
+  await expect(map.locator(".map-pin")).toHaveText(["", "1"], { useInnerText: true });
   await map.getByRole("button", { name: "All days", exact: true }).click();
   await expect(map.locator(".map-pin")).toHaveCount(5);
 });
@@ -84,9 +85,49 @@ test("picking a stop in the itinerary docks the map on it, and its pin leads bac
   await map.locator(".maplibregl-popup").getByRole("button", { name: "Show in itinerary" }).click();
   await expect(page.locator('[data-stop="a3"], .act.picked').first()).toBeInViewport();
 
-  // Clear, then undock from the Route header.
+  // Clear, then hide the map; the Route header shows it again.
   await map.getByRole("button", { name: "Clear" }).click();
   await expect(badge).toHaveAttribute("aria-pressed", "false");
-  await page.getByRole("button", { name: "Route" }).click();
+  await map.getByRole("button", { name: "Hide map" }).click();
   await expect(page.locator(".info-box.stuck")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Route" })).toHaveAttribute("aria-expanded", "false");
+  // Hidden stays hidden after a reload, until shown again.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Route" })).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("button", { name: "Route" }).click();
+  await expect(page.locator(".info-box.stuck")).toHaveCount(1);
+});
+
+test("find a place on the map by name, and show a stay from its row", async ({ page }) => {
+  const map = page.locator(".trip-map");
+  await expect(map.locator(".map-pin")).toHaveCount(5, { timeout: 20_000 });
+  const search = map.getByRole("combobox", { name: "Find a place on the map" });
+  await search.fill("todai");
+  await map.getByRole("option", { name: /Todai-ji/ }).click();
+  await expect(map.locator(".map-summary")).toContainText("Day 2 · Stop 1: Todai-ji");
+  await expect(page.getByRole("button", { name: "Stop 1: show Todai-ji on the map" })).toHaveAttribute("aria-pressed", "true");
+
+  const stay = page.getByTitle("Show Gion Ryokan on the map");
+  await stay.scrollIntoViewIfNeeded();
+  await stay.click();
+  await expect(stay).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(".info-box.stuck")).toBeInViewport();
+  await expect(map.locator(".map-summary")).toContainText("Stay: Gion Ryokan");
+  await expect(map.locator(".maplibregl-popup")).toContainText("Gion Ryokan");
+});
+
+test("an activity the map couldn't place can be found on it", async ({ page }) => {
+  const map = page.locator(".trip-map");
+  await expect(map.locator(".map-pin")).toHaveCount(5, { timeout: 20_000 });
+  // The mock's place search finds nothing called "dinner"; nearby, "Pontocho" turns up.
+  const find = page.getByTitle("Find Pontocho dinner on the map");
+  await find.scrollIntoViewIfNeeded();
+  await find.click();
+  // The map turns to Day 1, where it's now stop 2: the stay and both stops.
+  await expect(map.locator(".map-pin")).toHaveText(["", "1", "2"], { useInnerText: true });
+  const badge = page.getByRole("button", { name: "Stop 2: show Pontocho dinner on the map" });
+  await expect(badge).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".info-box.stuck")).toBeInViewport();
+  await expect(map.locator(".map-summary")).toContainText("Day 1 · Stop 2: Pontocho dinner");
+  await expect(map.locator(".maplibregl-popup")).toContainText("Closest match: Pontocho (found)");
 });

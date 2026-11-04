@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   anchorKey,
   canEdit,
@@ -17,7 +17,7 @@ import { CommentsPanel } from "./CommentsPanel";
 import { ItineraryView } from "./ItineraryView";
 import { buildRoute, type Route } from "@/lib/route";
 import { createMapFocus, MapFocusProvider } from "./mapFocus";
-import { useLegs, usePlaces } from "./places";
+import { useFoundPlaces, useLegs, usePlaces, type FindPlace } from "./places";
 import { TripMap } from "./TripMap";
 import { BookmarkIcon, ChevronDownIcon, CommentIcon, DownloadIcon, HistoryIcon, LogoIcon, MenuIcon, PlusIcon, UserPlusIcon } from "./icons";
 import { ItinerarySkeleton } from "./Skeleton";
@@ -73,11 +73,30 @@ export function ItineraryPane(props: Props) {
 
   const itinerary: Itinerary | null =
     viewing === "current" ? trip.itinerary : (trip.versions.find((v) => v.id === viewing)?.itinerary ?? null);
-  const { lookup, loading: placesLoading } = usePlaces(itinerary);
+  const { lookup: searched, loading: placesLoading } = usePlaces(itinerary);
+  const { lookup, find } = useFoundPlaces(itinerary, searched);
   const route = useMemo(() => (itinerary ? buildRoute(itinerary, lookup) : NO_ROUTE), [itinerary, lookup]);
   const { legs, loading: legsLoading } = useLegs(route);
   // What the map is focused on; a fresh start for each trip.
   const focus = useMemo(createMapFocus, [trip.id]);
+
+  // An activity found on request is shown on the map once the route has it.
+  const showFound = useRef<string | null>(null);
+  const findPlace = useCallback<FindPlace>(
+    async (day, activity) => {
+      showFound.current = activity.id;
+      const ok = await find(day, activity).catch(() => false);
+      if (!ok) showFound.current = null;
+      return ok;
+    },
+    [find],
+  );
+  useEffect(() => {
+    const stop = showFound.current && route.days.flatMap((d) => d.stops).find((s) => s.id === showFound.current);
+    if (!stop) return;
+    showFound.current = null;
+    focus.pick({ day: stop.day!, from: stop.order!, to: stop.order! }, { dock: true });
+  }, [route, focus]);
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
@@ -206,6 +225,7 @@ export function ItineraryPane(props: Props) {
                 onComment={setCommentAnchor}
                 lookup={lookup}
                 legs={legs}
+                onFind={findPlace}
                 map={<TripMap route={route} legs={legs} loading={placesLoading} routing={legsLoading} />}
               />
             </MapFocusProvider>

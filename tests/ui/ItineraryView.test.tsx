@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ItineraryView } from "@/components/ItineraryView";
 import { createMapFocus, MapFocusProvider } from "@/components/mapFocus";
-import type { LegLookup } from "@/lib/route";
+import { DAY_COLORS, type LegLookup } from "@/lib/route";
 import { fullLookup, sampleItinerary } from "../fixtures";
 
 function setup(counts = new Map<string, number>(), itinerary = sampleItinerary()) {
@@ -219,8 +219,8 @@ describe("stops and the map", () => {
     setupMap();
     const badge = screen.getByRole("button", { name: "Stop 2: show Pontocho dinner on the map" });
     expect(badge).toHaveTextContent("2");
-    expect(badge.closest("li")).toHaveStyle({ "--day": "#0f6e63" });
-    expect(screen.getByRole("button", { name: "Stop 1: show Todai-ji on the map" }).closest("li")).toHaveStyle({ "--day": "#c2410c" });
+    expect(badge.closest("li")).toHaveStyle({ "--day": DAY_COLORS[0] });
+    expect(screen.getByRole("button", { name: "Stop 1: show Todai-ji on the map" }).closest("li")).toHaveStyle({ "--day": DAY_COLORS[1] });
   });
 
   it("has no stop badges before places are known", () => {
@@ -232,7 +232,7 @@ describe("stops and the map", () => {
     const focus = setupMap();
     const nishiki = screen.getByRole("button", { name: "Stop 1: show Nishiki Market on the map" });
     await userEvent.click(nishiki);
-    expect(focus.get()).toEqual({ day: 1, range: { day: 1, from: 1, to: 1 }, docked: true });
+    expect(focus.get()).toEqual({ day: 1, range: { day: 1, from: 1, to: 1 }, spot: null, docked: true });
     expect(nishiki).toHaveAttribute("aria-pressed", "true");
     expect(nishiki.closest("li")).toHaveClass("picked");
 
@@ -259,16 +259,127 @@ describe("stops and the map", () => {
     expect(screen.getByRole("button", { name: "Stop 1: show Nishiki Market on the map" })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("keeps the docked route open, and its header undocks it", async () => {
+  it("keeps the map in view by default; its header hides it and shows it again", async () => {
     const focus = setupMap();
     const head = screen.getByRole("button", { name: "Route" });
-    await userEvent.click(head);
-    expect(head).toHaveAttribute("aria-expanded", "false");
-    act(() => focus.setDocked(true));
     expect(head).toHaveAttribute("aria-expanded", "true");
     expect(head.closest("section")).toHaveClass("stuck");
     await userEvent.click(head);
     expect(focus.get().docked).toBe(false);
+    expect(head).toHaveAttribute("aria-expanded", "false");
     expect(head.closest("section")).not.toHaveClass("stuck");
+    expect(localStorage.getItem("planaway:map-hidden")).toBe("1");
+    // Picking a stop brings the map back.
+    await userEvent.click(screen.getByRole("button", { name: "Stop 1: show Todai-ji on the map" }));
+    expect(head).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(head);
+    await userEvent.click(head);
+    expect(focus.get().docked).toBe(true);
+    expect(localStorage.getItem("planaway:map-hidden")).toBeNull();
+  });
+
+  it("shows a stop on the map from anywhere on its card, but its own links still work", async () => {
+    const focus = setupMap();
+    const card = (name: string) => screen.getByRole("button", { name: `Stop 1: show ${name} on the map` }).closest(".act-card")!;
+    await userEvent.click(card("Todai-ji").querySelector(".act-desc")!);
+    expect(focus.get().range).toEqual({ day: 2, from: 1, to: 1 });
+    act(() => focus.pick(null));
+    const link = within(card("Nishiki Market") as HTMLElement).getByRole("link", { name: "Nishiki Market" });
+    link.addEventListener("click", (e) => e.preventDefault());
+    await userEvent.click(link);
+    expect(focus.get().range).toBeNull();
+  });
+
+  it("shows stays and flights on the map from their rows, with no buttons of their own", async () => {
+    const focus = setupMap();
+    const stay = screen.getByTitle("Show Gion Ryokan on the map");
+    expect(stay).toHaveClass("row");
+    expect(within(stay).queryByRole("button", { name: /on the map/ })).toBeNull();
+    await userEvent.click(stay);
+    expect(focus.get()).toMatchObject({ spot: "l1", docked: true });
+    expect(stay).toHaveAttribute("aria-current", "true");
+    expect(stay).toHaveClass("picked");
+    await userEvent.click(stay);
+    expect(focus.get().spot).toBeNull();
+    await userEvent.click(screen.getByTitle("Show the flight SFO → KIX on the map"));
+    expect(focus.get().spot).toBe("f1");
+  });
+
+  it("shows items on the map from the keyboard", async () => {
+    const focus = setupMap();
+    const stay = screen.getByTitle("Show Gion Ryokan on the map");
+    stay.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(focus.get().spot).toBe("l1");
+    screen.getByTitle("Show Todai-ji on the map").focus();
+    await userEvent.keyboard(" ");
+    expect(focus.get().range).toEqual({ day: 2, from: 1, to: 1 });
+  });
+
+  function renderMissing(onFind?: (day: number, a: { name: string }) => Promise<boolean>) {
+    const lookup = fullLookup();
+    render(
+      <ItineraryView
+        itinerary={sampleItinerary()}
+        counts={new Map()}
+        onComment={vi.fn()}
+        lookup={(q) => (q.startsWith("Todai-ji") ? null : lookup(q))}
+        legs={legs}
+        map={<div />}
+        onFind={onFind}
+      />,
+    );
+  }
+
+  it("looks for a place the map couldn't find when its card is clicked, without any text", async () => {
+    let answer!: (found: boolean) => void;
+    const onFind = vi.fn(() => new Promise<boolean>((r) => (answer = r)));
+    renderMissing(onFind);
+    expect(screen.queryByRole("button", { name: /show Todai-ji on the map/ })).toBeNull();
+    expect(screen.queryByText(/Find on the map/)).toBeNull();
+    const card = screen.getByTitle("Find Todai-ji on the map");
+    await userEvent.click(within(card).getByText("The giant Buddha hall."));
+    expect(onFind).toHaveBeenCalledWith(2, expect.objectContaining({ name: "Todai-ji" }));
+    expect(card).toHaveAttribute("aria-busy", "true");
+    // A second click while it's looking doesn't look twice.
+    await userEvent.click(card);
+    expect(onFind).toHaveBeenCalledOnce();
+    await act(async () => answer(true));
+    expect(card).not.toHaveAttribute("aria-busy");
+  });
+
+  it("opens OpenStreetMap's search when the place isn't anywhere near", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    renderMissing(async () => false);
+    await userEvent.click(screen.getByTitle("Find Todai-ji on the map"));
+    const card = await screen.findByTitle("Todai-ji wasn't found nearby. Search OpenStreetMap");
+    await userEvent.click(card);
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/www\.openstreetmap\.org\/search\?query=Todai-ji/), "_blank", "noopener,noreferrer");
+  });
+
+  it("isn't clickable when there's no trip map to find it on", () => {
+    renderMissing();
+    expect(screen.queryByTitle(/Todai-ji/)).toBeNull();
+  });
+
+  it("numbers a stop found by its closest match like any other, with no note", () => {
+    const lookup = fullLookup();
+    render(
+      <ItineraryView
+        itinerary={sampleItinerary()}
+        counts={new Map()}
+        onComment={vi.fn()}
+        lookup={(q) => (q.startsWith("Todai-ji") ? { ...lookup(q)!, name: "Tōdai-ji Temple", guess: true } : lookup(q))}
+        legs={legs}
+        map={<div />}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Stop 1: show Todai-ji on the map" })).toBeInTheDocument();
+    expect(screen.queryByText(/closest match/)).toBeNull();
+  });
+
+  it("has no map buttons for stays and flights without a map", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: /^Show .* on the map$/ })).toBeNull();
   });
 });

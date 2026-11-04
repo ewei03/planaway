@@ -1,4 +1,5 @@
 import AIRPORT_ROWS from "./airports.json";
+import { haversine, type LatLng, type Place } from "./route";
 
 // Type-ahead suggestions for a starting point: an airport, city, or address.
 // - Airports come from lib/airports.json (OurAirports, public domain; rebuild
@@ -71,7 +72,10 @@ export function searchAirports(query: string): PlaceSuggestion[] {
 }
 
 interface PhotonFeature {
+  geometry?: { coordinates?: [number, number] };
   properties: {
+    osm_type?: string;
+    osm_id?: number;
     osm_key?: string;
     osm_value?: string;
     type?: string;
@@ -129,7 +133,10 @@ async function searchPhoton(query: string): Promise<PlaceSuggestion[]> {
   );
 }
 
-const g = globalThis as typeof globalThis & { __planawaySuggestCache?: Map<string, { at: number; places: PlaceSuggestion[] }> };
+const g = globalThis as typeof globalThis & {
+  __planawaySuggestCache?: Map<string, { at: number; places: PlaceSuggestion[] }>;
+  __planawayNearCache?: Map<string, { at: number; place: Place | null }>;
+};
 const cache = (g.__planawaySuggestCache ??= new Map());
 
 /**
@@ -165,4 +172,67 @@ export async function suggestPlaces(query: string): Promise<PlaceSuggestion[]> {
     if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
   }
   return result;
+}
+
+// ---------- Finding an activity the itinerary's search missed ----------
+
+/** How far from the day's other places a match may be: a day's activities are in or near its town. */
+export const NEAR_KM = 30;
+const OSM_TYPES: Record<string, string> = { N: "node", W: "way", R: "relation" };
+
+const nearCache = (g.__planawayNearCache ??= new Map<string, { at: number; place: Place | null }>());
+
+/**
+ * The closest good match for an activity's name near a point, or null. The
+ * itinerary's own search wants the exact name ("Pontocho dinner, Kyoto"), so a
+ * name with extra words often finds nothing; Photon is forgiving and can be
+ * steered toward a point. Trailing words are dropped one at a time ("Pontocho
+ * dinner", then "Pontocho"), and only matches within NEAR_KM count.
+ */
+export async function findNear(name: string, near: LatLng): Promise<Place | null> {
+  const terms = name.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
+  if (!terms.length) return null;
+  const key = `${terms.join(" ").toLowerCase()}|${near.lat.toFixed(2)},${near.lng.toFixed(2)}`;
+  const hit = nearCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.place;
+
+  let place: Place | null = null;
+  // At most three tries, and never down to a single short word ("The").
+  for (let n = terms.length; n > 0 && n > terms.length - 3 && !place; n--) {
+    const q = terms.slice(0, n).join(" ");
+    if (n < terms.length && q.length < 4) break;
+    place = await searchNear(q, near);
+  }
+  nearCache.delete(key);
+  nearCache.set(key, { at: Date.now(), place });
+  if (nearCache.size > CACHE_SIZE) nearCache.delete(nearCache.keys().next().value!);
+  return place;
+}
+
+async function searchNear(query: string, near: LatLng): Promise<Place | null> {
+  const params = new URLSearchParams({ q: query, lat: String(near.lat), lon: String(near.lng), limit: "5", lang: "en" });
+  const res = await fetch(`${photonUrl()}/api/?${params}`, {
+    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) throw new Error(`${res.status} from ${new URL(photonUrl()).host}`);
+  const { features = [] } = (await res.json()) as { features?: PhotonFeature[] };
+  for (const f of features) {
+    const [lng, lat] = f.geometry?.coordinates ?? [];
+    if (typeof lat !== "number" || typeof lng !== "number" || haversine(near, { lat, lng }) > NEAR_KM * 1000) continue;
+    const p = f.properties;
+    const type = p.osm_type && OSM_TYPES[p.osm_type];
+    const s = photonSuggestion(f);
+    return {
+      id: type && p.osm_id ? `${type}/${p.osm_id}` : `photon/${lat},${lng}`,
+      name: s?.label ?? query,
+      address: s?.detail || null,
+      lat,
+      lng,
+      mapsUrl: type && p.osm_id ? `https://www.openstreetmap.org/${type}/${p.osm_id}` : null,
+      photos: [],
+      guess: true,
+    };
+  }
+  return null;
 }
