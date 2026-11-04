@@ -13,12 +13,13 @@ test("the footer pages open without signing in, and link to each other", async (
   await page.getByRole("link", { name: "Get in touch" }).click();
   await expect(page.getByRole("heading", { name: "Contact", level: 1 })).toBeVisible();
   await expect(page.getByRole("link", { name: "help@planaway.test" })).toHaveAttribute("href", "mailto:help@planaway.test");
-  await expect(page.getByRole("link", { name: "Email us" }).first()).toHaveAttribute("href", /^mailto:help@planaway\.test\?subject=PlanAway%3A%20Bug%20report$/);
+  await expect(page.getByRole("button", { name: "Send message" })).toBeVisible();
 
   for (const [link, heading] of [["Privacy", "Privacy"], ["Terms", "Terms of use"]]) {
     await page.getByRole("navigation", { name: "Site" }).getByRole("link", { name: link }).click();
     await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
     await expect(page.getByRole("link", { name: "help@planaway.test" }).first()).toBeVisible();
+    await expect(page.getByText(/Test Operator/).first()).toBeVisible();
   }
 
   await page.getByRole("navigation", { name: "Site" }).getByRole("link", { name: "About" }).click();

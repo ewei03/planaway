@@ -3,3 +3,8 @@
 delete process.env.DATABASE_URL;
 process.env.PGLITE_DIR = "memory://";
 (globalThis as { __planawayDb?: unknown }).__planawayDb = undefined;
+
+// Every test starts with fresh limits on emails sent (sign-ups, resets, the contact form).
+import { beforeEach } from "vitest";
+import { resetRateLimits } from "@/lib/rateLimit";
+beforeEach(() => resetRateLimits());

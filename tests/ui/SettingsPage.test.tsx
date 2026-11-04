@@ -13,6 +13,7 @@ const profile = (settings: Partial<UserSettings> = {}): Profile => ({
   id: "u-me",
   name: "Maya",
   email: "maya@example.com",
+  emailVerified: true,
   birthDate: "1990-04-12",
   avatarUrl: null,
   settings: { ...DEFAULT_SETTINGS, ...settings },
@@ -68,7 +69,8 @@ describe("SettingsPage", () => {
     await userEvent.type(screen.getByLabelText("Email"), "maya@new.example");
     await userEvent.type(profileSection.getByLabelText("Current password"), "secret password");
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
-    await screen.findByText("Profile saved.");
+    // The new address needs confirming from a link sent to it.
+    await screen.findByText(/Profile saved\. We sent a link to .*: open it to confirm your new address\./);
     expect(sentTo(fetch, "/api/settings")[0]).toEqual({ name: "Maya", email: "maya@new.example", password: "secret password" });
   });
 
@@ -229,5 +231,20 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByLabelText("Enter your password to confirm")).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("says when the email isn't confirmed yet, and sends the link again", async () => {
+    const fetch = mockFetch(() => ({ sent: true }));
+    render(<SettingsPage profile={{ ...profile(), emailVerified: false }} />);
+    expect(screen.getByText(/Not confirmed yet/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Send it again" }));
+    expect(fetch).toHaveBeenCalledWith("/api/verify-email", expect.objectContaining({ method: "POST" }));
+    expect(await screen.findByText(/Sent\. Check your inbox/)).toBeInTheDocument();
+  });
+
+  it("offers a download of your data", () => {
+    render(<SettingsPage profile={profile()} />);
+    expect(screen.queryByText(/Not confirmed yet/)).toBeNull();
+    expect(screen.getByRole("link", { name: "Download my data" })).toHaveAttribute("href", "/api/settings/export");
   });
 });

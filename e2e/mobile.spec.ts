@@ -8,7 +8,8 @@ test("navigate between chat, itinerary, and sidebar on a phone", async ({ page }
   await planTrip(page);
 
   await page.getByRole("button", { name: "Show itinerary" }).click();
-  await expect(page.getByRole("heading", { name: "Day by day" })).toBeInViewport();
+  // The itinerary opens at its top: the cover photo and the trip's title.
+  await expect(page.getByRole("heading", { name: "Kyoto Food Weekend", level: 2 })).toBeInViewport();
   await page.getByRole("button", { name: "Back to chat" }).click();
   await expect(page.getByPlaceholder(/Refine the plan/)).toBeInViewport();
 

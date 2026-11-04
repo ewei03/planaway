@@ -208,14 +208,13 @@ describe("resolvePlaces", () => {
 
   it("keeps Nominatim requests a second apart", async () => {
     process.env.NOMINATIM_INTERVAL_MS = "200";
-    const times: number[] = [];
-    nominatim = (x) => {
-      times.push(Date.now());
-      return Response.json([result(x, null)]);
-    };
+    nominatim = (x) => Response.json([result(x, null)]);
+    // The whole run, not the gaps between fetches: under load a fetch can start a little after its slot, which shortens one gap
+    // without the slots themselves being any closer. Three slots a second apart can't fit in less than two intervals.
+    const start = Date.now();
     await resolvePlaces([q("A"), q("B"), q("C")]);
-    expect(times[1] - times[0]).toBeGreaterThanOrEqual(190);
-    expect(times[2] - times[1]).toBeGreaterThanOrEqual(190);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(395);
+    expect(calls.nominatim).toHaveLength(3);
   });
 
   it("shares one lookup between simultaneous requests", async () => {

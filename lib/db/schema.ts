@@ -35,9 +35,35 @@ export const users = pgTable(
     avatarUpdatedAt: timestamp("avatar_updated_at", { withTimezone: true }),
     /** Appearance and trip defaults; see lib/settings.ts. Read through parseSettings. */
     settings: jsonb("settings").$type<Partial<UserSettings>>().notNull().default({}),
+    /** When the email address was confirmed from a link sent to it; null until then, and again after it changes. */
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_email_idx").on(t.email)],
+);
+
+export const EMAIL_TOKEN_PURPOSES = ["verify", "reset"] as const;
+export type EmailTokenPurpose = (typeof EMAIL_TOKEN_PURPOSES)[number];
+
+/**
+ * One-time links sent by email: confirming an address, or resetting a
+ * password. Only a hash of the token is kept, so a copy of the database
+ * can't be used to take over accounts. `email` is the address the link went
+ * to; a link stops working if the account's address has changed since.
+ */
+export const emailTokens = pgTable(
+  "email_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    purpose: text("purpose", { enum: EMAIL_TOKEN_PURPOSES }).notNull(),
+    email: text("email").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("email_tokens_user_idx").on(t.userId, t.purpose)],
 );
 
 /** owner: the trip's creator, who shares and deletes it; editor: plan with the agent; viewer: read and comment. */

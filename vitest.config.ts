@@ -31,6 +31,8 @@ export default defineConfig({
           environment: "jsdom",
           include: ["tests/ui/**/*.test.tsx"],
           setupFiles: ["tests/setup/ui.ts"],
+          // Typing into forms takes a second or so alone, and several times that while the server tests run alongside.
+          testTimeout: 15_000,
         },
       },
     ],

@@ -10,7 +10,7 @@ let n = 0;
 export async function makeUser(name = "User"): Promise<UserRef & { email: string; password: string }> {
   const email = `${name.toLowerCase().replace(/\W/g, "")}-${++n}-${randomUUID().slice(0, 8)}@example.com`;
   const password = "correct horse battery";
-  const user = await createUser(name, email, password);
+  const user = await createUser(name, email, password, null, { verified: true });
   return { ...user, email, password };
 }
 

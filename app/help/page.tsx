@@ -151,8 +151,23 @@ const SECTIONS: { id: string; title: string; questions: [question: string, answe
       [
         "I forgot my password.",
         <>
-          There&rsquo;s no self-service reset yet. <Link href="/contact">Contact us</Link> from the email address on your account and we&rsquo;ll
-          help you get back in.
+          On the sign-in page, choose <b>Forgot password?</b> and enter your email address. We&rsquo;ll send you a link to choose a new one; it
+          works for one hour.
+        </>,
+      ],
+      [
+        "I didn't get the email to confirm my address.",
+        <>
+          Check your spam or junk folder. You can send a new link from the PlanAway home page, or from <Link href="/settings">Settings</Link>,
+          where you can also fix a mistyped address. Each new email replaces the last, so use the newest link. Still stuck?{" "}
+          <Link href="/contact">Contact us</Link>.
+        </>,
+      ],
+      [
+        "How do I get a copy of my data?",
+        <>
+          In <Link href="/settings">Settings</Link>, under <b>Your data</b>, choose <b>Download my data</b>. You&rsquo;ll get a file with your
+          profile, settings, and every trip you&rsquo;re on.
         </>,
       ],
       [

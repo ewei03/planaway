@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ContactLink, InfoPage } from "@/components/InfoPage";
+import { ContactLink, InfoPage, operatorName } from "@/components/InfoPage";
 
 export const metadata: Metadata = { title: "Terms · PlanAway", description: "The terms for using PlanAway." };
 
@@ -11,15 +11,15 @@ export default function Terms() {
   return (
     <InfoPage
       title="Terms of use"
-      updated="November 2, 2026"
-      intro="The ground rules for using PlanAway. By creating an account or using PlanAway, you agree to them."
+      updated="November 3, 2026"
+      intro={`The ground rules for using PlanAway, an agreement between you and ${operatorName()}, who runs it. By creating an account or using PlanAway, you agree to them.`}
     >
       <section>
         <h2>PlanAway plans; you book</h2>
         <p>
-          PlanAway is a planning tool. It suggests itineraries using AI and information it finds on the web. It isn&rsquo;t a travel agent: we
-          don&rsquo;t sell or book flights, stays, or activities, and we&rsquo;re not part of any booking you make. Bookings are between you and the
-          airline, hotel, or other business.
+          PlanAway is a planning tool. Its itineraries are written by an AI agent: software that searches the web and drafts plans for you,
+          not a person. Despite the name, neither the AI agent nor PlanAway is a travel agent: we don&rsquo;t sell or book flights, stays, or
+          activities, and we&rsquo;re not part of any booking you make. Bookings are between you and the airline, hotel, or other business.
         </p>
       </section>
 
@@ -33,10 +33,19 @@ export default function Terms() {
       </section>
 
       <section>
+        <h2>Who can use PlanAway</h2>
+        <p>
+          You must be at least 13 years old to use PlanAway. If you&rsquo;re under the age of majority where you live (18 in Ontario), a parent
+          or guardian must agree to these terms for you.
+        </p>
+      </section>
+
+      <section>
         <h2>Your account</h2>
         <p>
-          Give accurate details when you sign up, keep your password to yourself, and tell us if you think someone else is using your account.
-          You&rsquo;re responsible for what happens under your account.
+          Give accurate details when you sign up, and confirm your email address with the link we send you: planning starts once it&rsquo;s
+          confirmed. Keep your password to yourself, and tell us if you think someone else is using your account. You&rsquo;re responsible for what
+          happens under your account.
         </p>
       </section>
 
@@ -78,6 +87,15 @@ export default function Terms() {
         <h2>Ending your account</h2>
         <p>
           You can stop using PlanAway at any time, and delete your account from Settings. Questions about it? Contact us at <ContactLink />.
+        </p>
+      </section>
+
+      <section>
+        <h2>Governing law</h2>
+        <p>
+          These terms are governed by the laws of the Province of Ontario and the federal laws of Canada that apply there. Disputes will be
+          handled by the courts of Ontario, unless the law where you live gives you the right to go to court there. Nothing in these terms takes
+          away rights you have under consumer protection laws that can&rsquo;t be waived.
         </p>
       </section>
 

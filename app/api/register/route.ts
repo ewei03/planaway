@@ -1,8 +1,12 @@
 import { birthDateProblem, passwordProblem } from "@/lib/account";
+import { sendVerification } from "@/lib/accountEmails";
 import { body, handler, jsonError, str } from "@/lib/http";
+import { allow, clientIp } from "@/lib/rateLimit";
 import { createUser } from "@/lib/store";
 
 export const POST = handler(async (req: Request) => {
+  // Each sign-up sends an email; don't let one address flood inboxes with them.
+  if (!allow(`register:${clientIp(req)}`, 20, 60 * 60 * 1000)) return jsonError("Too many sign-ups from here. Try again later.", 429);
   const b = await body(req);
   const name = str(b.name, 80);
   const email = str(b.email, 200);
@@ -14,6 +18,8 @@ export const POST = handler(async (req: Request) => {
   // Checked before anything is stored, so nothing is kept about an under-13.
   const birthDateError = birthDateProblem(b.birthDate);
   if (birthDateError) return jsonError(birthDateError, 400);
-  await createUser(name, email, password, b.birthDate as string);
+  const user = await createUser(name, email, password, b.birthDate as string);
+  // The account exists either way: if the email can't go now, "Send it again" can retry.
+  await sendVerification(req, { ...user, email: email.toLowerCase() }).catch((err) => console.error("Couldn't send the confirmation email:", err));
   return Response.json({ ok: true }, { status: 201 });
 });

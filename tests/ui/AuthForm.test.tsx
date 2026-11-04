@@ -86,4 +86,25 @@ describe("AuthForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("links to resetting a password when signing in", () => {
+    render(<AuthForm callbackUrl="/" />);
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute("href", "/forgot-password");
+  });
+
+  it("points to the terms and privacy policy at sign-up", async () => {
+    render(<AuthForm callbackUrl="/" />);
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    expect(screen.getByRole("link", { name: "Terms of Use" })).toHaveAttribute("href", "/terms");
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
+    expect(screen.queryByRole("link", { name: "Forgot password?" })).toBeNull();
+  });
+
+  it("says when sign-in is paused after too many wrong passwords", async () => {
+    signInMock.mockResolvedValue({ error: "CredentialsSignin", code: "too_many_tries" });
+    render(<AuthForm callbackUrl="/" />);
+    await fill({ Email: "a@b.co", Password: "wrong one" });
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Too many wrong passwords. Wait 15 minutes");
+  });
 });

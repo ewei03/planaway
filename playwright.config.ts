@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = 3100;
 const MOCK_PORT = 3101;
+/** Where the app saves the emails it would send; e2e/helpers.ts reads them. */
+const OUTBOX_DIR = ".e2e-outbox";
 
 // End-to-end tests run the real app (next dev) against an in-memory database
 // and a mock Anthropic API, so they need no API key and never touch
@@ -55,6 +57,11 @@ export default defineConfig({
         ROUTING_INTERVAL_MS: "0",
         AUTH_SECRET: "e2e-test-secret-not-for-production-use",
         CONTACT_EMAIL: "help@planaway.test",
+        OPERATOR_NAME: "Test Operator",
+        // Emails are saved as files for the tests to read (see e2e/helpers.ts) instead of being sent.
+        EMAIL_OUTBOX_DIR: OUTBOX_DIR,
+        // Every test signs up from the same address; the limits are covered by the unit tests.
+        PLANAWAY_RATE_LIMITS: "off",
       },
     },
   ],

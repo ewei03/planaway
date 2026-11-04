@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { LogoIcon } from "./icons";
+import { contactEmail } from "@/lib/site";
 import { SiteFooter } from "./SiteFooter";
 
 /** The frame for the footer pages (Help, Contact, Privacy, Terms): open to everyone, signed in or not. */
@@ -26,10 +27,7 @@ export function InfoPage({ title, intro, updated, children }: { title: string; i
   );
 }
 
-/** The contact address, from CONTACT_EMAIL; null until it's set. */
-export function contactEmail(): string | null {
-  return process.env.CONTACT_EMAIL?.trim() || null;
-}
+export { contactEmail, operatorName } from "@/lib/site";
 
 /** The contact address as a link, or a pointer to the Contact page when none is set. */
 export function ContactLink() {

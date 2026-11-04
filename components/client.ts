@@ -34,6 +34,8 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
+  /** Planning waits until the email address is confirmed. */
+  emailVerified?: boolean;
   /** Profile photo; null shows their initial. */
   avatarUrl?: string | null;
 }

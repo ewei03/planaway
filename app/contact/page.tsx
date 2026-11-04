@@ -1,22 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { auth } from "@/auth";
+import { ContactForm } from "@/components/ContactForm";
 import { contactEmail, InfoPage } from "@/components/InfoPage";
+import { CONTACT_TOPICS } from "@/lib/site";
+import { getProfile } from "@/lib/store";
 
 export const metadata: Metadata = { title: "Contact · PlanAway", description: "How to reach the PlanAway team." };
 
 // Read CONTACT_EMAIL when the page is served, not when it's built.
 export const dynamic = "force-dynamic";
 
-const REASONS: [title: string, subject: string, text: string][] = [
-  ["Something isn't working", "Bug report", "Tell us what you did, what you expected, and what happened instead. A screenshot helps."],
-  ["Account help", "Account help", "Forgotten password or trouble signing in. Write from the address on your account."],
-  ["Ideas and feedback", "Feedback", "What would make PlanAway better for your next trip?"],
-  ["Privacy questions", "Privacy", "Questions about your data, or a request to see or delete it."],
-];
-
-export default function Contact() {
+export default async function Contact() {
   const email = contactEmail();
-  const mailto = (subject: string) => `mailto:${email}?${new URLSearchParams({ subject: `PlanAway: ${subject}` }).toString().replace(/\+/g, "%20")}`;
+  // Signed in: the form starts with your name and address.
+  const userId = (await auth())?.user?.id;
+  const profile = userId ? await getProfile(userId).catch(() => null) : null;
   return (
     <InfoPage
       title="Contact"
@@ -28,25 +27,15 @@ export default function Contact() {
       }
     >
       {email ? (
-        <p className="contact-email">
-          Email us at <a href={`mailto:${email}`}>{email}</a>. We usually reply within a couple of working days.
-        </p>
+        <>
+          <ContactForm topics={CONTACT_TOPICS} initial={{ name: profile?.name ?? "", email: profile?.email ?? "" }} />
+          <p className="contact-email">
+            Prefer email? Write to <a href={`mailto:${email}`}>{email}</a>. We usually reply within a couple of working days.
+          </p>
+        </>
       ) : (
-        <p className="contact-email muted">Our contact email address isn&rsquo;t available yet. Please check back soon.</p>
+        <p className="contact-email muted">Our contact details aren&rsquo;t available yet. Please check back soon.</p>
       )}
-      <ul className="contact-reasons">
-        {REASONS.map(([title, subject, text]) => (
-          <li key={title} className="card">
-            <h2>{title}</h2>
-            <p className="muted">{text}</p>
-            {email && (
-              <a className="btn soft" href={mailto(subject)}>
-                Email us
-              </a>
-            )}
-          </li>
-        ))}
-      </ul>
     </InfoPage>
   );
 }

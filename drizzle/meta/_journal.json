@@ -85,6 +85,13 @@
       "when": 1793720033288,
       "tag": "0011_route_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793754849536,
+      "tag": "0012_email_verification",
+      "breakpoints": true
     }
   ]
 }

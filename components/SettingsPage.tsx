@@ -19,9 +19,10 @@ import type { Profile } from "@/lib/store";
 import { Avatar } from "./Avatar";
 import { CurrencySelect } from "./CurrencySelect";
 import { api } from "./client";
-import { ArrowLeftIcon, CategoryIcon } from "./icons";
+import { ArrowLeftIcon, CategoryIcon, DownloadIcon } from "./icons";
 import { PlaceInput } from "./PlaceInput";
 import { SiteFooter } from "./SiteFooter";
+import { useResendVerification } from "./VerifyEmail";
 
 const THEME_LABELS: Record<Theme, string> = { system: "Match my device", light: "Light", dark: "Dark" };
 
@@ -102,6 +103,7 @@ export function SettingsPage({ profile }: { profile: Profile }) {
         <PasswordSection />
         <AppearanceSection initial={profile.settings} save={save} />
         <DefaultsSection initial={profile.settings} save={save} />
+        <DataSection />
         <DeleteAccountSection />
       </div>
       <SiteFooter />
@@ -118,9 +120,11 @@ function ProfileSection({ profile }: { profile: Profile }) {
   const [birthDate, setBirthDate] = useState(profile.birthDate ?? "");
   const [password, setPassword] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl);
+  const [verified, setVerified] = useState(profile.emailVerified);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const resender = useResendVerification();
 
   const emailChanged = email.trim().toLowerCase() !== saved.email;
   const birthDateChanged = birthDate !== saved.birthDate;
@@ -140,7 +144,11 @@ function ProfileSection({ profile }: { profile: Profile }) {
       setEmail(updated.email);
       setBirthDate(updated.birthDate ?? "");
       setPassword("");
-      setStatus({ kind: "ok", text: "Profile saved." });
+      setVerified(updated.emailVerified);
+      setStatus({
+        kind: "ok",
+        text: emailChanged ? `Profile saved. We sent a link to ${updated.email}: open it to confirm your new address.` : "Profile saved.",
+      });
     } catch (err) {
       setStatus({ kind: "error", text: (err as Error).message });
     } finally {
@@ -224,6 +232,20 @@ function ProfileSection({ profile }: { profile: Profile }) {
         />
         <label htmlFor="settings-email">Email</label>
         <input id="settings-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        {!verified && !emailChanged && (
+          <p className="small email-unverified">
+            <span className="muted">Not confirmed yet: you can plan trips once you open the link we emailed you.</span>{" "}
+            <button type="button" className="link-btn" onClick={resender.resend} disabled={resender.busy}>
+              {resender.busy ? "Sending…" : "Send it again"}
+            </button>
+            {resender.status && (
+              <span className={`settings-status ${resender.status.kind}`} role={resender.status.kind === "error" ? "alert" : "status"}>
+                {" "}
+                {resender.status.text}
+              </span>
+            )}
+          </p>
+        )}
         {emailChanged && (
           <>
             <label htmlFor="settings-password">Current password</label>
@@ -235,7 +257,7 @@ function ProfileSection({ profile }: { profile: Profile }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <p className="muted small">You sign in with your email, so changing it takes your password.</p>
+            <p className="muted small">You sign in with your email, so changing it takes your password. We&rsquo;ll email the new address a link to confirm it.</p>
           </>
         )}
         <div className="settings-actions">
@@ -545,6 +567,25 @@ function PasswordSection() {
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+// ---------- Your data ----------
+
+function DataSection() {
+  return (
+    <section className="card settings-section" aria-labelledby="data-heading">
+      <h2 id="data-heading">Your data</h2>
+      <p className="muted small">
+        Download a copy of everything PlanAway holds about you: your profile and settings, and every trip you&rsquo;re on, with its plan,
+        chat, versions, and comments. It&rsquo;s a JSON file, readable by other apps.
+      </p>
+      <div className="settings-actions">
+        <a className="btn" href="/api/settings/export" download>
+          <DownloadIcon size={16} /> Download my data
+        </a>
+      </div>
     </section>
   );
 }

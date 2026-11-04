@@ -1,4 +1,9 @@
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import { expect, type Page } from "@playwright/test";
+
+/** Must match OUTBOX_DIR in playwright.config.ts. */
+const OUTBOX_DIR = ".e2e-outbox";
 
 let n = 0;
 
@@ -12,8 +17,35 @@ export function account(name: string): Account {
   return { name, email: `${name.toLowerCase()}-${Date.now()}-${++n}@example.com`, password: "e2e password 123" };
 }
 
-/** Registers from the login page currently shown (or /login), and waits for the redirect. */
-export async function register(page: Page, who: Account, { goto = true } = {}) {
+/** The newest email the app sent to `to`, waiting for it to arrive. */
+export async function lastEmail(to: string, { subject }: { subject?: RegExp } = {}): Promise<{ subject: string; text: string; action: { url: string } | null }> {
+  let found: { subject: string; text: string; to: string; action: { url: string } | null } | undefined;
+  await expect
+    .poll(
+      async () => {
+        const names = (await readdir(OUTBOX_DIR).catch(() => [] as string[])).sort();
+        const emails = await Promise.all(names.map(async (n) => JSON.parse(await readFile(path.join(OUTBOX_DIR, n), "utf8"))));
+        found = emails.filter((e) => e.to === to && (!subject || subject.test(e.subject))).at(-1);
+        return Boolean(found);
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  return found!;
+}
+
+/** Opens the link in the confirmation email, the way a mail app would, without leaving the current page. */
+export async function confirmEmail(page: Page, who: Account) {
+  const email = await lastEmail(who.email, { subject: /Confirm your email/ });
+  const res = await page.request.get(email.action!.url);
+  expect(res.ok()).toBe(true);
+}
+
+/**
+ * Registers from the login page currently shown (or /login), and waits for the redirect.
+ * Confirms the email address too, unless `confirm` is false, reloading the home page so it opens up.
+ */
+export async function register(page: Page, who: Account, { goto = true, confirm = true } = {}) {
   if (goto) await page.goto("/login");
   await page.getByRole("button", { name: "Create an account" }).click();
   await page.getByLabel("Name").fill(who.name);
@@ -22,6 +54,9 @@ export async function register(page: Page, who: Account, { goto = true } = {}) {
   await page.getByLabel("Password").fill(who.password);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).not.toHaveURL(/\/login/);
+  if (!confirm) return;
+  await confirmEmail(page, who);
+  if (new URL(page.url()).pathname === "/") await page.reload();
 }
 
 export async function signIn(page: Page, who: Account) {

@@ -251,6 +251,11 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .eyebrow { margin: 0 0 6px; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .start h1 { font-family: var(--font-heading); font-size: clamp(40px, 6vw, 60px); line-height: 1.02; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 12px; }
 .start-lede { font-size: 17px; max-width: 640px; margin: 0; }
+/* Until the email is confirmed, in place of the start screen. */
+.verify-card { margin-top: 24px; padding: 22px 24px; display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.verify-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.verify-card .settings-status { margin: 0; }
+.verify-card p.small { margin: 0; }
 .busy-note { margin: 20px 0 0; padding: 12px 16px; border-radius: 12px; background: var(--accent-soft); font-size: 14px; }
 .tabs { display: flex; gap: 4px; margin: 28px 0 12px; background: var(--surface-2); padding: 4px; border-radius: 12px; width: fit-content; }
 .tab { border: 0; background: none; padding: 8px 16px; border-radius: 9px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
@@ -285,6 +290,8 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .grid label { margin-top: 0; }
 .grid > div { margin-bottom: 12px; }
+/* Labels in a grid have no top margin; after a field, the grid keeps the usual 12px gap a label would. */
+input + .grid { margin-top: 12px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips label { margin: 0; font-weight: 500; cursor: pointer; }
 .chips input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -798,10 +805,13 @@ a.source:hover .source-arrow { color: var(--accent); transform: translate(2px, -
 .faq summary:hover { color: var(--accent); }
 .faq p { margin: 0 0 16px; color: var(--text); }
 .contact-email { font-size: 18px; }
-.contact-reasons { list-style: none; padding: 0 !important; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.contact-reasons li { margin: 0; padding: 18px 20px; border-radius: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.contact-reasons h2 { font-size: 20px; margin: 0; }
-.contact-reasons p { margin: 0; font-size: 14px; flex: 1; }
+.contact-form { padding: 22px 24px; border-radius: 18px; }
+.contact-form h2 { font-size: 22px; margin: 0 0 4px; }
+.contact-form .contact-hint { margin: 6px 0 0; }
+.contact-form textarea { width: 100%; }
+.contact-form + .contact-email { margin-top: 20px; font-size: 16px; }
+/* A field only bots see and fill in. */
+.contact-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .about-steps { list-style: none; padding: 0 !important; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
 .about-steps li { margin: 0; padding: 20px; border-radius: 16px; }
 .about-steps h3 { font-family: var(--font-heading); font-size: 20px; font-weight: 600; margin: 10px 0 6px; }
@@ -834,6 +844,8 @@ a.source:hover .source-arrow { color: var(--accent); transform: translate(2px, -
 .settings-status { margin: 0 auto 0 0; font-size: 14px; }
 .settings-status.ok { color: var(--accent); }
 .settings-status.error { color: var(--danger); }
+.email-unverified { margin: 6px 0 0; }
+.email-unverified .settings-status { font-size: inherit; }
 .danger-zone { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .danger-zone h2 { color: var(--danger); }
 .auth-notice { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--text); font-size: 14px; }
@@ -903,6 +915,10 @@ a.source:hover .source-arrow { color: var(--accent); transform: translate(2px, -
 .auth-card p { margin: 0 0 4px; }
 .auth-card form .btn { margin-top: 16px; }
 .auth-card .auth-switch { margin-top: 14px; font-size: 14px; text-align: center; }
+.auth-card .auth-forgot { margin: 6px 0 0; text-align: right; }
+.auth-card .auth-legal { margin: 14px 0 0; }
+.account-card { padding: 28px; }
+.account-card .btn.block { margin-top: 16px; }
 .auth-card .invite-from { margin: 0; }
 .auth-card .invite-from + h1 { margin-top: 2px; }
 .auth-card .invite-facts { font-weight: 600; }
@@ -1097,17 +1113,33 @@ a.btn.block { display: block; }
 
   /* Pages settle in on load, top to bottom. */
   .info-header, .info-inner > h1, .info-intro, .info-inner > .muted, .info-body,
-  .start-inner > .eyebrow, .start-inner > h1, .start-inner > .start-lede, .start-inner > .tabs, .start-inner > form,
   .settings-inner > * {
     animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   }
-  .info-inner > h1, .start-inner > h1, .settings-inner > :nth-child(2) { animation-delay: 60ms; }
-  .info-intro, .start-inner > .start-lede, .settings-inner > :nth-child(3) { animation-delay: 120ms; }
-  .info-inner > .muted, .start-inner > .tabs, .settings-inner > :nth-child(4) { animation-delay: 180ms; }
-  .info-body, .start-inner > form, .settings-inner > :nth-child(n + 5) { animation-delay: 240ms; }
+  .info-inner > h1, .settings-inner > :nth-child(2) { animation-delay: 60ms; }
+  .info-intro, .settings-inner > :nth-child(3) { animation-delay: 120ms; }
+  .info-inner > .muted, .settings-inner > :nth-child(4) { animation-delay: 180ms; }
+  .info-body, .settings-inner > :nth-child(n + 5) { animation-delay: 240ms; }
 
-  /* Inspiration cards arrive one after another. */
-  .inspiration-card { animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(300ms + var(--i, 0) * 50ms); }
+  /* New trip and the itinerary settle in a little more slowly, one part after another. */
+  .start-inner > .eyebrow, .start-inner > h1, .start-inner > .start-lede, .start-inner > .tabs, .start-inner > form, .verify-inner > .verify-card,
+  .itinerary > .cover, .it-head > *, .it-card > .stats > .stat, .it-card > .weather-note, .it-card > .budget-bar {
+    animation: fade-up 0.65s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .start-inner > h1, .it-head > h2 { animation-delay: 80ms; }
+  .start-inner > .start-lede, .it-head > .it-summary { animation-delay: 160ms; }
+  .start-inner > .tabs { animation-delay: 240ms; }
+  .start-inner > form, .verify-inner > .verify-card { animation-delay: 320ms; }
+  .itinerary > .cover { animation-name: fade-in; }
+
+  /* Inspiration cards, and the itinerary's key facts, arrive one after another. */
+  .inspiration-card { animation: fade-up 0.65s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(400ms + var(--i, 0) * 70ms); }
+  .it-card > .stats > .stat:nth-child(1) { animation-delay: 240ms; }
+  .it-card > .stats > .stat:nth-child(2) { animation-delay: 310ms; }
+  .it-card > .stats > .stat:nth-child(3) { animation-delay: 380ms; }
+  .it-card > .stats > .stat:nth-child(4) { animation-delay: 450ms; }
+  .it-card > .weather-note { animation-delay: 520ms; }
+  .it-card > .budget-bar { animation-delay: 590ms; }
 
   /* An opened Help answer fades in rather than snapping open. */
   .faq[open] > p { animation: fade-in 0.3s ease-out; }
@@ -1118,12 +1150,12 @@ a.btn.block { display: block; }
   .dialog[open] { animation: rise-in 0.2s ease-out; }
   .dialog[open]::backdrop { animation: fade-in 0.2s ease-out; }
 
-  .about-steps li, .contact-reasons li { transition: transform 0.2s ease, box-shadow 0.2s ease; }
-  .about-steps li:hover, .contact-reasons li:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .about-steps li { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+  .about-steps li:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 
   @supports (animation-timeline: view()) {
     /* Footer pages: sections fade in as they scroll up into view, and fade gently as they leave the top. */
-    .info-body > section, .info-body > nav, .about-steps li, .contact-reasons li, .about-cta {
+    .info-body > section, .info-body > nav, .about-steps li, .about-cta {
       /* reveal-out fills forwards only: filling backwards would hold full opacity over reveal-in. */
       animation: reveal-in linear both, reveal-out linear forwards;
       animation-timeline: view(), view();
@@ -1135,8 +1167,8 @@ a.btn.block { display: block; }
       animation-timeline: view();
       animation-range: entry 0% entry 50%;
     }
-    /* Docked, it never leaves view; a scroll-linked fade would only flicker. */
-    .itinerary > .info-box.stuck { animation: none; }
+    /* Docked, the map never leaves view, so a scroll-linked fade would only flicker: it settles in after the facts instead. */
+    .itinerary > .info-box.stuck { animation: fade-up 0.65s cubic-bezier(0.2, 0.7, 0.2, 1) 660ms both; animation-timeline: auto; }
   }
 }
 

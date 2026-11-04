@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState, type FormEvent } from "react";
 import { today } from "@/lib/account";
@@ -27,7 +28,11 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
       }
       const res = await signIn("credentials", { email, password, redirect: false });
       if (!res || res.error) {
-        setError("Wrong email or password.");
+        setError(
+          res?.code === "too_many_tries"
+            ? "Too many wrong passwords. Wait 15 minutes and try again, or reset your password."
+            : "Wrong email or password.",
+        );
         return;
       }
       // Full navigation so the server renders with the new session.
@@ -91,10 +96,22 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            {registering && <p className="muted small">At least 8 characters.</p>}
+            {registering ? (
+              <p className="muted small">At least 8 characters.</p>
+            ) : (
+              <p className="small auth-forgot">
+                <Link href="/forgot-password">Forgot password?</Link>
+              </p>
+            )}
             {error && (
               <p className="form-error" role="alert">
                 {error}
+              </p>
+            )}
+            {registering && (
+              <p className="muted small auth-legal">
+                By creating an account, you agree to the <Link href="/terms">Terms of Use</Link> and acknowledge the{" "}
+                <Link href="/privacy">Privacy Policy</Link>. We&rsquo;ll email you a link to confirm your address.
               </p>
             )}
             <button className="btn primary block" disabled={busy}>

@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import bcrypt from "bcryptjs";
 import { and, asc, count, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { birthDateProblem, passwordProblem } from "./account";
 import { getDb, schema as s, type Db } from "./db";
-import type { CommentTarget, Role } from "./db/schema";
+import type { CommentTarget, EmailTokenPurpose, Role } from "./db/schema";
 import type { Itinerary } from "./itinerary";
 import { parseSettings, type UserSettings } from "./settings";
 
@@ -50,6 +50,8 @@ export interface Viewer extends UserRef {
 /** The signed-in user's own account, for the app and the settings page. */
 export interface Profile extends Viewer {
   email: string;
+  /** The address has been confirmed from a link sent to it. Planning waits for this. */
+  emailVerified: boolean;
   /** YYYY-MM-DD, or null for accounts made before it was asked. */
   birthDate: string | null;
   settings: UserSettings;
@@ -144,8 +146,17 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
 // ---------- Users ----------
 
-/** The register route requires a valid birthDate; it's optional here for tests and older callers. */
-export async function createUser(name: string, email: string, password: string, birthDate: string | null = null): Promise<UserRef> {
+/**
+ * The register route requires a valid birthDate; it's optional here for tests and older callers.
+ * New accounts start unconfirmed; `verified` is for tests and scripts that skip the email.
+ */
+export async function createUser(
+  name: string,
+  email: string,
+  password: string,
+  birthDate: string | null = null,
+  { verified = false }: { verified?: boolean } = {},
+): Promise<UserRef> {
   const db = await getDb();
   const normalized = email.trim().toLowerCase();
   const passwordHash = await bcrypt.hash(password, 12);
@@ -154,10 +165,98 @@ export async function createUser(name: string, email: string, password: string, 
     if (existing.length) throw new ConflictError("An account with that email already exists.");
     const [user] = await tx
       .insert(s.users)
-      .values({ name: name.trim(), email: normalized, passwordHash, birthDate })
+      .values({ name: name.trim(), email: normalized, passwordHash, birthDate, emailVerifiedAt: verified ? new Date() : null })
       .returning({ id: s.users.id, name: s.users.name });
     return user;
   });
+}
+
+// ---------- Email links: confirming an address, resetting a password ----------
+
+/** How long each kind of link works. */
+export const EMAIL_TOKEN_TTL_MS: Record<EmailTokenPurpose, number> = { verify: 24 * 60 * 60 * 1000, reset: 60 * 60 * 1000 };
+
+const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+/**
+ * A new one-time link token for the user, to send to `email`. Earlier links
+ * for the same purpose stop working, so only the newest email counts.
+ */
+export async function createEmailToken(userId: string, purpose: EmailTokenPurpose, email: string): Promise<string> {
+  const db = await getDb();
+  const token = randomBytes(32).toString("base64url");
+  await db.transaction(async (tx) => {
+    await tx.delete(s.emailTokens).where(and(eq(s.emailTokens.userId, userId), eq(s.emailTokens.purpose, purpose)));
+    await tx.insert(s.emailTokens).values({
+      tokenHash: hashToken(token),
+      userId,
+      purpose,
+      email: email.trim().toLowerCase(),
+      expiresAt: new Date(Date.now() + EMAIL_TOKEN_TTL_MS[purpose]),
+    });
+  });
+  return token;
+}
+
+/** The user a link is for, if it's still good: not expired, and sent to the account's current address. */
+async function tokenUser(db: Db, token: string, purpose: EmailTokenPurpose) {
+  if (!token) return null;
+  const [row] = await db
+    .select({ userId: s.emailTokens.userId, email: s.emailTokens.email, current: s.users.email, verifiedAt: s.users.emailVerifiedAt })
+    .from(s.emailTokens)
+    .innerJoin(s.users, eq(s.users.id, s.emailTokens.userId))
+    .where(and(eq(s.emailTokens.tokenHash, hashToken(token)), eq(s.emailTokens.purpose, purpose), gt(s.emailTokens.expiresAt, new Date())));
+  return row && row.email === row.current ? row : null;
+}
+
+/**
+ * Confirms the address a verify link was sent to. "already" when it was
+ * confirmed before (the link was opened twice, or by a mail scanner first).
+ */
+export async function verifyEmail(token: string): Promise<"verified" | "already" | "invalid"> {
+  const db = await getDb();
+  const row = await tokenUser(db, token, "verify");
+  if (!row) return "invalid";
+  if (row.verifiedAt) return "already";
+  await db.transaction(async (tx) => {
+    await tx.update(s.users).set({ emailVerifiedAt: new Date() }).where(eq(s.users.id, row.userId));
+    await tx.delete(s.emailTokens).where(and(eq(s.emailTokens.userId, row.userId), eq(s.emailTokens.purpose, "verify")));
+  });
+  return "verified";
+}
+
+/** Who to send a password reset to, or null when no account has that address. */
+export async function findUserByEmail(email: string): Promise<(UserRef & { email: string }) | null> {
+  const db = await getDb();
+  const [u] = await db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users).where(eq(s.users.email, email.trim().toLowerCase()));
+  return u ?? null;
+}
+
+/**
+ * Sets a new password from a reset link. Getting the link proves the
+ * address is theirs, so it's confirmed too. The link works once.
+ */
+export async function resetPassword(token: string, password: string): Promise<void> {
+  const problem = passwordProblem(password);
+  if (problem) throw new InvalidInputError(problem);
+  const db = await getDb();
+  const row = await tokenUser(db, token, "reset");
+  if (!row) throw new InvalidInputError("This link has expired or was already used. Ask for a new one.");
+  const passwordHash = await bcrypt.hash(password, 12);
+  await db.transaction(async (tx) => {
+    await tx
+      .update(s.users)
+      .set({ passwordHash, emailVerifiedAt: row.verifiedAt ?? new Date() })
+      .where(eq(s.users.id, row.userId));
+    await tx.delete(s.emailTokens).where(and(eq(s.emailTokens.userId, row.userId), eq(s.emailTokens.purpose, "reset")));
+  });
+}
+
+/** Planning uses the AI, which costs money to run, so it waits until the address is confirmed. */
+async function requireVerified(db: Db, userId: string): Promise<void> {
+  const [u] = await db.select({ at: s.users.emailVerifiedAt }).from(s.users).where(eq(s.users.id, userId));
+  if (!u) throw new NotFoundError("Account not found");
+  if (!u.at) throw new ForbiddenError("Confirm your email address to plan trips. Check your inbox for the link, or send a new one.");
 }
 
 // Compared against when the email has no account, so the response time
@@ -187,6 +286,7 @@ export async function getProfile(userId: string): Promise<Profile> {
       id: s.users.id,
       name: s.users.name,
       email: s.users.email,
+      emailVerifiedAt: s.users.emailVerifiedAt,
       birthDate: s.users.birthDate,
       avatarUpdatedAt: s.users.avatarUpdatedAt,
       settings: s.users.settings,
@@ -198,6 +298,7 @@ export async function getProfile(userId: string): Promise<Profile> {
     id: u.id,
     name: u.name,
     email: u.email,
+    emailVerified: u.emailVerifiedAt !== null,
     birthDate: u.birthDate,
     avatarUrl: avatarUrl(u.id, u.avatarUpdatedAt),
     settings: parseSettings(u.settings),
@@ -227,17 +328,22 @@ export async function renameUser(userId: string, name: string): Promise<void> {
   await db.update(s.users).set({ name: name.trim() }).where(eq(s.users.id, userId));
 }
 
-/** The email is the sign-in name, so changing it takes the current password. */
-export async function changeEmail(userId: string, email: string, password: string): Promise<void> {
+/**
+ * The email is the sign-in name, so changing it takes the current password.
+ * The new address needs confirming; returns the old one, to tell it about
+ * the change, or null when nothing changed.
+ */
+export async function changeEmail(userId: string, email: string, password: string): Promise<string | null> {
   const db = await getDb();
   const normalized = email.trim().toLowerCase();
   const [u] = await db.select({ hash: s.users.passwordHash, email: s.users.email }).from(s.users).where(eq(s.users.id, userId));
   if (!u) throw new NotFoundError("Account not found");
   if (!(await bcrypt.compare(password, u.hash))) throw new ForbiddenError("That password isn't right.");
-  if (normalized === u.email) return;
+  if (normalized === u.email) return null;
   const [taken] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, normalized));
   if (taken) throw new ConflictError("An account with that email already exists.");
-  await db.update(s.users).set({ email: normalized }).where(eq(s.users.id, userId));
+  await db.update(s.users).set({ email: normalized, emailVerifiedAt: null }).where(eq(s.users.id, userId));
+  return u.email;
 }
 
 export async function saveSettings(userId: string, settings: UserSettings): Promise<UserSettings> {
@@ -340,9 +446,40 @@ export async function deleteAccount(userId: string, password: string): Promise<v
   await db.delete(s.users).where(eq(s.users.id, userId));
 }
 
+/**
+ * Everything PlanAway holds about the user, for "Download my data": the
+ * account (without the password hash) and every trip they're on, as they see
+ * it, including others' messages and comments on shared trips.
+ */
+export async function exportUserData(userId: string) {
+  const db = await getDb();
+  const [u] = await db.select().from(s.users).where(eq(s.users.id, userId));
+  if (!u) throw new NotFoundError("Account not found");
+  const trips = await listTrips(userId);
+  return {
+    exportedAt: new Date().toISOString(),
+    account: {
+      name: u.name,
+      email: u.email,
+      emailConfirmedAt: iso(u.emailVerifiedAt),
+      birthDate: u.birthDate,
+      profilePhoto: u.avatar,
+      settings: parseSettings(u.settings),
+      createdAt: iso(u.createdAt),
+    },
+    trips: await Promise.all(
+      trips.map(async (t) => {
+        const { busy: _busy, revision: _revision, ...trip } = await getTripView(userId, t.id);
+        return { ...trip, completedAt: t.completedAt };
+      }),
+    ),
+  };
+}
+
 /** Refuses while the user's agent is busy on another trip, so a new trip isn't left empty. */
 export async function createTrip(userId: string): Promise<{ id: string }> {
   const db = await getDb();
+  await requireVerified(db, userId);
   const busy = await runningTurn(db, userId);
   if (busy) throw new ConflictError(stillPlanning(busy.title));
   const [trip] = await db.insert(s.trips).values({ createdBy: userId }).returning({ id: s.trips.id });
@@ -629,6 +766,7 @@ export async function acceptTripInvite(userId: string, token: string): Promise<{
 export async function claimTurn(userId: string, tripId: string): Promise<boolean> {
   const { db, role } = await tripAccess(userId, tripId);
   requireRole(role, "editor", "plan with the agent");
+  await requireVerified(db, userId);
   const staleBefore = new Date(Date.now() - TURN_LOCK_MS);
   return db.transaction(async (tx) => {
     // Serializes this user's claims, so two sent at once can't both pass the

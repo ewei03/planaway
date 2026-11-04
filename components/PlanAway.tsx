@@ -23,6 +23,7 @@ import { Sidebar } from "./Sidebar";
 import { TripSkeleton } from "./Skeleton";
 import { clampChat, clampSidebar, DEFAULT_CHAT, DEFAULT_SIDEBAR, SidebarHandle, SplitHandle } from "./SplitHandle";
 import { INSPIRATION_QUERIES, StartScreen } from "./StartScreen";
+import { VerifyEmailPrompt } from "./VerifyEmail";
 import type { UserSettings } from "@/lib/settings";
 
 const POLL_MS = 4000;
@@ -463,6 +464,8 @@ export function PlanAway({
                 onError={notify}
               />
             </section>
+          ) : user.emailVerified === false ? (
+            <VerifyEmailPrompt email={user.email} onOpenSidebar={showSidebar} />
           ) : (
             <StartScreen
               onStart={startTrip}

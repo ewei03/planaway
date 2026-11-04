@@ -1,6 +1,6 @@
 # PlanAway
 
-A collaborative trip-planning agent powered by Claude. Describe a trip, or describe what you like and let it pick, and it researches flights, stays, and things to do on the web. It then builds a day-by-day itinerary. Plan it together with friends: everyone shares the conversation with the agent, comments on specific parts of the plan, and the agent works the comments into the next revision.
+PlanAway is the future for vacation planning: a Claude-powered AI agent that does all your research. Describe your dream trip in your own words, and it builds out a comprehensive, day-by-day itinerary within minutes! Fine-tune it as you go: the agent works your suggestions into the next revision. Plan it together with friends: everyone has a say in how the trip will look. 
 
 ## Tech stack
 
@@ -44,7 +44,7 @@ The itinerary shows a route map and photos of destinations, activities, and stay
 - **Photos:** when a place's OpenStreetMap entry links to Wikidata, its image comes from [Wikimedia Commons](https://commons.wikimedia.org), shown with its author and license.
 - **Routes:** [OSRM](https://project-osrm.org) on the [FOSSGIS servers](https://routing.openstreetmap.de) finds the way between each day's stops: on foot for hops up to 2 km, by road beyond that. The map draws the streets, and the timeline shows how long each leg takes.
 
-The map and the itinerary work together. Each stop in the timeline has a numbered badge matching its pin: click one to show it on the map, and click another stop of the same day to see the way between them, with the total time and distance. The travel time between two activities does the same for that leg. Clicking anywhere on an activity's card, a stay, or a flight (or pressing Enter on it) does the same. The map stays at the top of the itinerary while you scroll, unless you hide it; a pin's popup has "Show in itinerary" to jump back. "Find a place…" above the map searches every stop, stay, and flight by name. Clicking an activity the map couldn't place searches for it by name near the rest of its day (with [Photon](https://photon.komoot.io), within 30 km) and adds the closest match to the map, marked as such, for as long as the page is open.
+The map and the itinerary work together. Click on any stop in the timeline and it will show its location in the map, and click another stop of the same day to see the way between them, with the total time and distance. The travel time between two activities does the same for that leg. Clicking anywhere on an activity's card, a stay, or a flight (or pressing Enter on it) does the same. The map stays at the top of the itinerary while you scroll, unless you hide it; a pin's popup has "Show in itinerary" to jump back. "Find a place…" above the map searches every stop, stay, and flight by name. Clicking an activity the map couldn't place searches for it by name near the rest of its day (with [Photon](https://photon.komoot.io), within 30 km) and adds the closest match to the map, marked as such, for as long as the page is open.
 
 The public Nominatim server allows one request per second for the whole app, so lookups are paced, a few new places per request. Pins and photos fill in over a few seconds for a new trip. Results are cached in the database for 30 days, and revising a plan only looks up new places. Famous sights and neighborhoods are found reliably; small restaurants and hotels sometimes aren't, and then simply have no pin or photo.
 
@@ -136,11 +136,34 @@ Settings in `.env`:
 | `NOMINATIM_EMAIL` | (unset) | Contact address sent to Nominatim |
 | `PHOTON_URL` | `https://photon.komoot.io` | Starting point suggestions in Settings, and finding activities the map missed |
 | `ROUTING_URL` | `https://routing.openstreetmap.de` | Routes between stops (OSRM, with `/routed-foot` and `/routed-car`) |
-| `CONTACT_EMAIL` | (unset) | Address shown on the Contact, Privacy, and Terms pages |
+| `APP_URL` | (unset; required in production) | The site's public address, used in links in emails |
+| `OPERATOR_NAME` | "the PlanAway team" | Who runs PlanAway: named on the Privacy and Terms pages and in emails |
+| `CONTACT_EMAIL` | (unset) | Where Contact page messages go; shown on the Contact, Privacy, and Terms pages |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | (unset: emails go to the server log) | Your email provider's SMTP server. Port 465 uses TLS from the start; set `SMTP_SECURE=true` or `false` to override |
+| `EMAIL_FROM` | `PlanAway <no-reply@localhost>` | The sender of PlanAway's emails, on a domain your provider lets you send from |
 | `PLANAWAY_EFFORT` | `medium` | `low` to `max`. Higher means more thorough research and higher cost. |
 
 ## Notes
 
-- Prices come from search results and pages the agent reads, so they are estimates. Confirm before booking.
+- Prices come from search results and pages the agent reads, so they are **estimates**. Do not assume that prices are accurate; they are there for you to get a rough idea of how much you're spending. Confirm before booking.
 - Every turn calls the API with web search enabled. Web searches are billed per search on top of tokens.
-- Before running this on a public server, add rate limiting on sign-in and registration, email verification, and password reset. None of these exist yet.
+- Rate limits (wrong passwords at sign-in, sign-ups, confirmation and reset emails, the contact form) are kept in the server's memory. That's enough for one server; with several behind a load balancer, each keeps its own count.
+
+## Accounts and email
+
+New accounts confirm their email address from a link before they can plan (the AI costs money to run). Until then they can sign in, see trips shared with them, and change their address in Settings. Accounts made before confirmation existed count as confirmed. Changing the address in Settings asks to confirm the new one and tells the old one. "Forgot password?" on the sign-in page emails a link that works for an hour. Links are single-use, and only a hash of each is stored. After 10 wrong passwords for an address in 15 minutes, sign-in pauses for it until the 15 minutes are up.
+
+Emails go out over SMTP, so any provider works: [Resend](https://resend.com), [Postmark](https://postmarkapp.com), Amazon SES, Mailgun, or a Google Workspace account. They're all transactional (no marketing), and each says who runs PlanAway and how to reach you. Without `SMTP_HOST`, emails are printed to the server log, which is handy in development.
+
+Settings has "Download my data", a JSON file of the account and every trip the person is on.
+
+## Going live
+
+Before opening PlanAway to the public:
+
+1. **Set `APP_URL`** to the site's address (`https://…`). Links in emails use it, and PlanAway refuses to send them without it in production.
+2. **Set up email**: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM` on a domain you've verified with your provider (with its SPF and DKIM records), or confirmation emails will land in spam.
+3. **Set `OPERATOR_NAME` and `CONTACT_EMAIL`**: the Privacy and Terms pages name who runs PlanAway and how to reach them, as Canadian privacy law (PIPEDA) expects.
+4. **Set `AUTH_SECRET`** to a long random value (`npx auth secret`), and serve the site over HTTPS only.
+5. **Read the Privacy and Terms pages** as the operator: they describe your obligations, such as answering access requests within 30 days and reporting breaches. They're a plain-language starting point, not legal advice; have a lawyer review them if you can.
+6. Set `NOMINATIM_EMAIL`, and consider self-hosting the map services for heavy traffic (see Maps and photos).

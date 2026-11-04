@@ -10,3 +10,4 @@ playwright-report/
 coverage/
 CODEBASE_OVERVIEW.md
 TODO.md
+.e2e-outbox/

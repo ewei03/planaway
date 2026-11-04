@@ -1,3 +1,4 @@
+import { sendEmailChanged, sendVerification } from "@/lib/accountEmails";
 import { body, handler, jsonError, requireUser, str } from "@/lib/http";
 import { changeEmail, deleteAccount, getProfile, renameUser, setBirthDate } from "@/lib/store";
 
@@ -7,7 +8,11 @@ export const GET = handler(async () => {
   return Response.json(await getProfile(user.id));
 });
 
-/** Body: any of { name }, { birthDate }, and { email, password }. Changing the email takes the current password. */
+/**
+ * Body: any of { name }, { birthDate }, and { email, password }. Changing the
+ * email takes the current password; the new address gets a link to confirm
+ * it, and the old one a note about the change.
+ */
 export const PATCH = handler(async (req: Request) => {
   const user = await requireUser();
   const b = await body(req);
@@ -22,7 +27,15 @@ export const PATCH = handler(async (req: Request) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonError("Enter a valid email address.", 400);
     const password = typeof b.password === "string" ? b.password : "";
     if (!password) return jsonError("Enter your current password to change your email.", 400);
-    await changeEmail(user.id, email, password);
+    const previous = await changeEmail(user.id, email, password);
+    if (previous) {
+      const { name } = await getProfile(user.id);
+      // The change is made either way; the confirmation can be sent again from Settings.
+      await Promise.all([
+        sendVerification(req, { id: user.id, name, email: email.toLowerCase() }),
+        sendEmailChanged(previous, name, email.toLowerCase()),
+      ]).catch((err) => console.error("Couldn't send the email change emails:", err));
+    }
   }
   return Response.json(await getProfile(user.id));
 });
