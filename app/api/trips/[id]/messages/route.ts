@@ -3,6 +3,10 @@ import { body, handler, jsonError, requireUser, str, type IdParams } from "@/lib
 import { describeDefaults } from "@/lib/settings";
 import { claimTurn, commitTurn, getProfile, getTripRevision, loadTurnContext, releaseTurn } from "@/lib/store";
 
+// Agent turns can take minutes. 300s is the most Vercel's Hobby plan allows;
+// raise it (up to 800 on Pro) if long turns get cut off.
+export const maxDuration = 300;
+
 // Sends a message to the agent and streams its progress back as Server-Sent
 // Events. The turn keeps running if the browser disconnects, so work isn't
 // lost; the result is committed in one transaction when it finishes.

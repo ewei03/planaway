@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // The home folder above this project has its own package.json and lockfile;
   // pin the root so Next doesn't go looking there.
   outputFileTracingRoot: root,
+  // Migrations are read from disk at runtime (lib/db/index.ts), which file
+  // tracing can't see; ship them with every server function (e.g. on Vercel).
+  outputFileTracingIncludes: { "/**": ["./drizzle/**/*"] },
   turbopack: { root },
   // Loaded from node_modules at runtime rather than bundled: PGlite ships
   // WebAssembly and data files that bundling breaks.
