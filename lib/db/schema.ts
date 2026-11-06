@@ -46,9 +46,9 @@ export const EMAIL_TOKEN_PURPOSES = ["verify", "reset"] as const;
 export type EmailTokenPurpose = (typeof EMAIL_TOKEN_PURPOSES)[number];
 
 /**
- * One-time links sent by email: confirming an address, or resetting a
- * password. Only a hash of the token is kept, so a copy of the database
- * can't be used to take over accounts. `email` is the address the link went
+ * One-time secrets sent by email: a code to confirm an address, or a link to
+ * reset a password. Only a hash is kept, so a copy of the database can't be
+ * used to take over accounts. `email` is the address the link went
  * to; a link stops working if the account's address has changed since.
  */
 export const emailTokens = pgTable(
@@ -61,6 +61,8 @@ export const emailTokens = pgTable(
     purpose: text("purpose", { enum: EMAIL_TOKEN_PURPOSES }).notNull(),
     email: text("email").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Wrong guesses at a confirmation code; it stops working after a few. */
+    attempts: integer("attempts").notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [index("email_tokens_user_idx").on(t.userId, t.purpose)],

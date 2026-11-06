@@ -18,8 +18,11 @@ export function account(name: string): Account {
 }
 
 /** The newest email the app sent to `to`, waiting for it to arrive. */
-export async function lastEmail(to: string, { subject }: { subject?: RegExp } = {}): Promise<{ subject: string; text: string; action: { url: string } | null }> {
-  let found: { subject: string; text: string; to: string; action: { url: string } | null } | undefined;
+export async function lastEmail(
+  to: string,
+  { subject }: { subject?: RegExp } = {},
+): Promise<{ subject: string; text: string; action: { url: string } | null; code: string | null }> {
+  let found: { subject: string; text: string; to: string; action: { url: string } | null; code: string | null } | undefined;
   await expect
     .poll(
       async () => {
@@ -34,16 +37,17 @@ export async function lastEmail(to: string, { subject }: { subject?: RegExp } = 
   return found!;
 }
 
-/** Opens the link in the confirmation email, the way a mail app would, without leaving the current page. */
-export async function confirmEmail(page: Page, who: Account) {
+/** Types the code from the newest confirmation email into the code box on the page, and submits it. */
+export async function enterCode(page: Page, who: Account) {
   const email = await lastEmail(who.email, { subject: /Confirm your email/ });
-  const res = await page.request.get(email.action!.url);
-  expect(res.ok()).toBe(true);
+  await page.getByLabel("Confirmation code").fill(email.code!);
+  await page.getByLabel("Confirmation code").press("Enter");
 }
 
 /**
- * Registers from the login page currently shown (or /login), and waits for the redirect.
- * Confirms the email address too, unless `confirm` is false, reloading the home page so it opens up.
+ * Registers from the login page currently shown (or /login), then enters the
+ * emailed code and waits to land in the app. With `confirm: false` it stops at
+ * the code step, still on the login page.
  */
 export async function register(page: Page, who: Account, { goto = true, confirm = true } = {}) {
   if (goto) await page.goto("/login");
@@ -54,10 +58,10 @@ export async function register(page: Page, who: Account, { goto = true, confirm 
   await page.getByLabel("Password", { exact: true }).fill(who.password);
   await page.getByLabel("Confirm password").fill(who.password);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/login/);
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   if (!confirm) return;
-  await confirmEmail(page, who);
-  if (new URL(page.url()).pathname === "/") await page.reload();
+  await enterCode(page, who);
+  await expect(page).not.toHaveURL(/\/login/);
 }
 
 export async function signIn(page: Page, who: Account) {

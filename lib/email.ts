@@ -20,6 +20,8 @@ export interface Email {
   lines: string[];
   /** A button in the HTML version, also given as a plain link. */
   action?: { label: string; url: string };
+  /** A one-time code, shown large after the paragraphs. */
+  code?: string;
   replyTo?: string;
 }
 
@@ -48,11 +50,11 @@ function footer(): string {
   return `PlanAway is operated by ${operatorName()}.${contact ? ` Questions? Write to ${contact}.` : ""}`;
 }
 
-export function renderText({ lines, action }: Email): string {
-  return [...lines, ...(action ? [`${action.label}: ${action.url}`] : []), "", "—", footer()].join("\n\n");
+export function renderText({ lines, action, code }: Email): string {
+  return [...lines, ...(code ? [code] : []), ...(action ? [`${action.label}: ${action.url}`] : []), "", "—", footer()].join("\n\n");
 }
 
-export function renderHtml({ subject, lines, action }: Email): string {
+export function renderHtml({ subject, lines, action, code }: Email): string {
   const p = (s: string) => `<p style="margin:0 0 16px">${escape(s)}</p>`;
   const button = action
     ? `<p style="margin:24px 0"><a href="${escape(action.url)}" style="background:#0f6e63;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;display:inline-block">${escape(action.label)}</a></p>` +
@@ -63,6 +65,7 @@ export function renderHtml({ subject, lines, action }: Email): string {
 <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:14px;padding:28px">
 <p style="margin:0 0 20px;font-weight:700;font-size:18px">PlanAway</p>
 ${lines.map(p).join("\n")}
+${code ? `<p style="margin:8px 0 24px;font-size:32px;font-weight:700;letter-spacing:8px;font-family:ui-monospace,Menlo,Consolas,monospace">${escape(code)}</p>` : ""}
 ${button}
 <p style="margin:24px 0 0;color:#6b6860;font-size:13px">${escape(footer())}</p>
 </div></body></html>`;
@@ -80,7 +83,7 @@ export async function sendEmail(email: Email): Promise<void> {
   if (outbox) {
     await mkdir(outbox, { recursive: true });
     const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
-    await writeFile(path.join(outbox, name), JSON.stringify({ ...message, action: email.action ?? null }, null, 2));
+    await writeFile(path.join(outbox, name), JSON.stringify({ ...message, action: email.action ?? null, code: email.code ?? null }, null, 2));
     return;
   }
   if (process.env.NODE_ENV === "production") console.warn(`SMTP_HOST isn't set, so this email to ${email.to} wasn't sent: "${email.subject}".`);
@@ -89,11 +92,14 @@ export async function sendEmail(email: Email): Promise<void> {
 
 // ---------- The emails ----------
 
-export const verifyEmailMessage = (to: string, name: string, url: string): Email => ({
+export const verifyEmailMessage = (to: string, name: string, code: string): Email => ({
   to,
   subject: "Confirm your email address for PlanAway",
-  lines: [`Hi ${name},`, "Confirm this email address to start planning trips with PlanAway. The link works for 24 hours.", "If you didn't create a PlanAway account, you can ignore this email."],
-  action: { label: "Confirm email address", url },
+  lines: [
+    `Hi ${name},`,
+    "Enter this code in PlanAway to confirm your email address. It works for 30 minutes. If you didn't create a PlanAway account, you can ignore this email.",
+  ],
+  code,
 });
 
 export const resetPasswordMessage = (to: string, name: string, url: string): Email => ({

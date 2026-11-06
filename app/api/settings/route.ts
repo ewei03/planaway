@@ -32,7 +32,7 @@ export const PATCH = handler(async (req: Request) => {
       const { name } = await getProfile(user.id);
       // The change is made either way; the confirmation can be sent again from Settings.
       await Promise.all([
-        sendVerification(req, { id: user.id, name, email: email.toLowerCase() }),
+        sendVerification({ id: user.id, name, email: email.toLowerCase() }),
         sendEmailChanged(previous, name, email.toLowerCase()),
       ]).catch((err) => console.error("Couldn't send the email change emails:", err));
     }

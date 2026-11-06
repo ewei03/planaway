@@ -1,13 +1,14 @@
 import { emailChangedMessage, resetPasswordMessage, sendEmail, verifyEmailMessage } from "./email";
 import { appUrl } from "./site";
-import { createEmailToken } from "./store";
+import { createEmailToken, createVerifyCode } from "./store";
 
-// The account emails, with their one-time links. Sending can fail (the email
-// provider is down, say); callers decide whether that matters.
+// The account emails, with their one-time codes and links. Sending can fail
+// (the email provider is down, say); callers decide whether that matters.
 
-export async function sendVerification(req: Request, user: { id: string; name: string; email: string }): Promise<void> {
-  const token = await createEmailToken(user.id, "verify", user.email);
-  await sendEmail(verifyEmailMessage(user.email, user.name, `${appUrl(req)}/verify-email?token=${token}`));
+/** A code to confirm the address. No link, so it doesn't depend on APP_URL. */
+export async function sendVerification(user: { id: string; name: string; email: string }): Promise<void> {
+  const code = await createVerifyCode(user.id, user.email);
+  await sendEmail(verifyEmailMessage(user.email, user.name, code));
 }
 
 export async function sendPasswordReset(req: Request, user: { id: string; name: string; email: string }): Promise<void> {

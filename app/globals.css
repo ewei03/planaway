@@ -256,6 +256,16 @@ legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
 .verify-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .verify-card .settings-status { margin: 0; }
 .verify-card p.small { margin: 0; }
+/* Entering an emailed confirmation code: on sign-up, in the app, in Settings. */
+.verify-code-form { margin-top: 8px; }
+.verify-code-form label { margin-top: 4px; }
+.verify-code { font-size: 22px; letter-spacing: 0.4em; text-align: center; font-variant-numeric: tabular-nums; padding: 10px 12px; }
+.verify-code::placeholder { color: var(--muted); opacity: 0.45; }
+.verify-code-form .btn { margin-top: 14px; }
+.verify-code-form p.small { margin: 10px 0 0; }
+.verify-code-form .settings-status { margin: 10px 0 0; }
+.email-unverified .verify-code-form { max-width: 320px; }
+.email-unverified > p { margin: 0; }
 .busy-note { margin: 20px 0 0; padding: 12px 16px; border-radius: 12px; background: var(--accent-soft); font-size: 14px; }
 .tabs { display: flex; gap: 4px; margin: 28px 0 12px; background: var(--surface-2); padding: 4px; border-radius: 12px; width: fit-content; }
 .tab { border: 0; background: none; padding: 8px 16px; border-radius: 9px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }

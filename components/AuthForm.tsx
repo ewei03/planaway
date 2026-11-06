@@ -8,9 +8,12 @@ import { AuthArt } from "./AuthArt";
 import { api } from "./client";
 import { LogoIcon } from "./icons";
 import { SiteFooter } from "./SiteFooter";
+import { sendVerifyCode, VerifyCodeForm } from "./VerifyEmail";
 
 export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A message shown above the form, e.g. after deleting an account. */ notice?: string }) {
-  const [mode, setMode] = useState<"signin" | "register">("signin");
+  // "verify": the account exists, and waits for the code emailed to it before signing in.
+  const [mode, setMode] = useState<"signin" | "register" | "verify">("signin");
+  const [verifyStatus, setVerifyStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,6 +21,22 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
   const [birthDate, setBirthDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** Signs in with the details typed above, and opens the app. Returns false when the address still needs its code. */
+  const signInAndGo = async (): Promise<boolean> => {
+    const res = await signIn("credentials", { email, password, redirect: false });
+    if (res?.code === "unverified") return false;
+    if (!res || res.error) {
+      throw new Error(
+        res?.code === "too_many_tries"
+          ? "Too many wrong passwords. Wait 15 minutes and try again, or reset your password."
+          : "Wrong email or password.",
+      );
+    }
+    // Full navigation so the server renders with the new session.
+    window.location.assign(callbackUrl);
+    return true;
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,25 +48,64 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
     setBusy(true);
     try {
       if (mode === "register") {
+        // Registering emails a code; the app opens once it's entered.
         await api("/api/register", { method: "POST", body: JSON.stringify({ name, email, password, birthDate }) });
-      }
-      const res = await signIn("credentials", { email, password, redirect: false });
-      if (!res || res.error) {
-        setError(
-          res?.code === "too_many_tries"
-            ? "Too many wrong passwords. Wait 15 minutes and try again, or reset your password."
-            : "Wrong email or password.",
-        );
+        setVerifyStatus(null);
+        setMode("verify");
         return;
       }
-      // Full navigation so the server renders with the new session.
-      window.location.assign(callbackUrl);
+      if (!(await signInAndGo())) {
+        // Signed up earlier but never confirmed: send a fresh code and ask for it.
+        const sent = await sendVerifyCode(email);
+        setVerifyStatus(sent?.kind === "error" ? sent : { kind: "ok", text: "Your email isn't confirmed yet, so we sent you a new code." });
+        setMode("verify");
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
     }
   };
+
+  const finishVerifying = async () => {
+    if (!(await signInAndGo())) throw new Error("That didn't work. Try the code again.");
+  };
+
+  if (mode === "verify") {
+    return (
+      <div className="auth-split">
+        <AuthArt />
+        <main className="auth-page">
+          <div className="auth-card" key={mode}>
+            <div className="brand">
+              <span className="logo" aria-hidden="true">
+                <LogoIcon />
+              </span>
+              <span className="brand-name">PlanAway</span>
+            </div>
+            <h1>Check your email</h1>
+            <p className="muted">
+              We sent a 6-digit code to <b>{email}</b>. Enter it to confirm your address, and we&rsquo;ll sign you in.
+            </p>
+            <VerifyCodeForm email={email} onVerified={finishVerifying} initialStatus={verifyStatus} submitLabel="Confirm and sign in" />
+            <p className="auth-switch muted">
+              Wrong address or done for now?{" "}
+              <button
+                className="link-btn"
+                onClick={() => {
+                  setMode("signin");
+                  setError(null);
+                }}
+              >
+                Back to sign in
+              </button>
+            </p>
+          </div>
+          <SiteFooter />
+        </main>
+      </div>
+    );
+  }
 
   const registering = mode === "register";
 

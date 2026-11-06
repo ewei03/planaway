@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Email } from "@/lib/email";
@@ -18,10 +19,11 @@ import * as dataExport from "@/app/api/settings/export/route";
 import * as trips from "@/app/api/trips/route";
 import * as messages from "@/app/api/trips/[id]/messages/route";
 import * as resend from "@/app/api/verify-email/route";
+import * as confirmCode from "@/app/api/verify-email/confirm/route";
 import { getDb, schema as s } from "@/lib/db";
 import { contactMessage, renderHtml, renderText, verifyEmailMessage } from "@/lib/email";
 import { appUrl } from "@/lib/site";
-import { findUserByEmail, getProfile, verifyCredentials, verifyEmail, type UserRef } from "@/lib/store";
+import { findUserByEmail, getProfile, isEmailVerified, MAX_CODE_ATTEMPTS, verifyCredentials, verifyEmailCode, type UserRef } from "@/lib/store";
 
 function signIn(user: UserRef | null) {
   authMock.mockResolvedValue(user ? { user: { id: user.id, name: user.name } } : null);
@@ -31,6 +33,10 @@ const req = (method: string, path: string, json?: unknown) =>
 
 /** The emails sent so far, oldest first. */
 const sent = () => sendMock.mock.calls.map(([email]) => email as Email);
+/** The code in the last email to `to`. */
+const lastCode = (to: string) => sent().filter((e) => e.to === to).at(-1)!.code!;
+/** A code that isn't `code`. */
+const otherThan = (code: string) => String((Number(code) + 1) % 1_000_000).padStart(6, "0");
 /** The token in the link of the last email to `to`. */
 const lastToken = (to: string) => new URL(sent().filter((e) => e.to === to).at(-1)!.action!.url).searchParams.get("token")!;
 
@@ -53,31 +59,60 @@ beforeEach(() => {
 afterEach(releaseAllTurns);
 
 describe("confirming an email address", () => {
-  it("emails a link at sign-up, and the account can't plan until it's opened", async () => {
+  const send = (email: string, ip = "203.0.113.20") =>
+    resend.POST(new Request("http://localhost/api/verify-email", { method: "POST", body: JSON.stringify({ email }), headers: { "x-forwarded-for": ip } }));
+  const confirm = (email: string, code: string) => confirmCode.POST(req("POST", "/api/verify-email/confirm", { email, code }));
+
+  it("emails a 6-digit code at sign-up, and the account can't plan until it's entered", async () => {
     const user = await registerUser();
     const [email] = sent();
     expect(email).toMatchObject({ to: user.email, subject: "Confirm your email address for PlanAway" });
-    expect(email.action!.url).toMatch(/^http:\/\/localhost\/verify-email\?token=[\w-]{40,}$/);
-    expect((await getProfile(user.id)).emailVerified).toBe(false);
+    expect(email.code).toMatch(/^\d{6}$/);
+    expect(email.action).toBeUndefined();
+    expect(await isEmailVerified(user.id)).toBe(false);
 
     signIn(user);
     const refused = await trips.POST();
     expect(refused.status).toBe(403);
     expect((await refused.json()).error).toMatch(/Confirm your email address to plan trips/);
 
-    expect(await verifyEmail(lastToken(user.email))).toBe("verified");
-    expect((await getProfile(user.id)).emailVerified).toBe(true);
+    const res = await confirm(user.email.toUpperCase(), lastCode(user.email));
+    expect(await res.json()).toEqual({ verified: true });
+    expect(await isEmailVerified(user.id)).toBe(true);
     expect((await trips.POST()).status).toBe(201);
-    // Opened again, or by a mail scanner first: still fine.
-    expect(await verifyEmail(lastToken(user.email))).toBe("invalid");
+    // Entered again (a double click): still fine.
+    expect((await confirm(user.email, lastCode(user.email))).status).toBe(200);
   });
 
-  it("says when an address is already confirmed", async () => {
+  it("refuses a wrong code, and stops taking guesses after a few", async () => {
     const user = await registerUser();
-    const token = lastToken(user.email);
-    const db = await getDb();
-    await db.update(s.users).set({ emailVerifiedAt: new Date() }).where(eq(s.users.id, user.id));
-    expect(await verifyEmail(token)).toBe("already");
+    const code = lastCode(user.email);
+    const wrong = await confirm(user.email, otherThan(code));
+    expect(wrong.status).toBe(400);
+    expect((await wrong.json()).error).toMatch(/isn't right/);
+    for (let i = 1; i < MAX_CODE_ATTEMPTS; i++) await confirm(user.email, otherThan(code));
+    const late = await confirm(user.email, code);
+    expect((await late.json()).error).toMatch(/expired/);
+    expect(await isEmailVerified(user.id)).toBe(false);
+    // A new code starts over.
+    await send(user.email);
+    expect((await confirm(user.email, lastCode(user.email))).status).toBe(200);
+  });
+
+  it("counts guesses sent at once", async () => {
+    const user = await registerUser();
+    const code = lastCode(user.email);
+    await Promise.all(Array.from({ length: MAX_CODE_ATTEMPTS + 3 }, () => verifyEmailCode(user.email, otherThan(code))));
+    expect(await verifyEmailCode(user.email, code)).toBe("expired");
+  });
+
+  it("checks the code's shape, and ignores spaces in it", async () => {
+    const user = await registerUser();
+    const res = await confirm(user.email, "12ab");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Enter the 6-digit code from the email.");
+    const code = lastCode(user.email);
+    expect((await confirm(user.email, ` ${code.slice(0, 3)} ${code.slice(3)} `)).status).toBe(200);
   });
 
   it("lets an unconfirmed editor see a shared trip, but not plan with it", async () => {
@@ -90,24 +125,26 @@ describe("confirming an email address", () => {
     expect(res.status).toBe(403);
   });
 
-  it("sends a new link on request, which replaces the old one, a few times at most", async () => {
+  it("sends a new code on request, signed out, which replaces the old one, a few times at most", async () => {
     const user = await registerUser();
-    const first = lastToken(user.email);
-    signIn(user);
-    expect(await (await resend.POST(req("POST", "/api/verify-email"))).json()).toEqual({ sent: true });
-    expect(await verifyEmail(first)).toBe("invalid");
-    await resend.POST(req("POST", "/api/verify-email"));
-    await resend.POST(req("POST", "/api/verify-email"));
-    const limited = await resend.POST(req("POST", "/api/verify-email"));
+    const first = lastCode(user.email);
+    signIn(null);
+    expect(await (await send(user.email)).json()).toEqual({ sent: true });
+    if (lastCode(user.email) !== first) expect(await verifyEmailCode(user.email, first)).toBe("wrong");
+    await send(user.email);
+    await send(user.email);
+    const limited = await send(user.email);
     expect(limited.status).toBe(429);
     expect(sent()).toHaveLength(4);
-    expect(await verifyEmail(lastToken(user.email))).toBe("verified");
-    expect(await (await resend.POST(req("POST", "/api/verify-email"))).json()).toEqual({ verified: true });
+    expect(await verifyEmailCode(user.email, lastCode(user.email))).toBe("verified");
   });
 
-  it("needs a signed-in user to send a new link", async () => {
-    signIn(null);
-    expect((await resend.POST(req("POST", "/api/verify-email"))).status).toBe(401);
+  it("answers the same for addresses without an unconfirmed account, and sends nothing", async () => {
+    const confirmed = await makeUser("Confirmed");
+    expect(await (await send("nobody-here@example.com")).json()).toEqual({ sent: true });
+    expect(await (await send(confirmed.email)).json()).toEqual({ sent: true });
+    expect(sent()).toHaveLength(0);
+    expect((await (await confirm("nobody-here@example.com", "123456")).json()).error).toMatch(/isn't right/);
   });
 
   it("still creates the account when the email can't be sent", async () => {
@@ -117,38 +154,46 @@ describe("confirming an email address", () => {
     expect(user.id).toBeTruthy();
   });
 
-  it("rejects expired and made-up links", async () => {
+  it("doesn't need APP_URL, since there's no link", async () => {
+    vi.stubEnv("APP_URL", "");
+    vi.stubEnv("NODE_ENV", "production");
     const user = await registerUser();
-    const token = lastToken(user.email);
-    const db = await getDb();
-    await db.update(s.emailTokens).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(s.emailTokens.userId, user.id));
-    expect(await verifyEmail(token)).toBe("invalid");
-    expect(await verifyEmail("made-up")).toBe("invalid");
-    expect(await verifyEmail("")).toBe("invalid");
+    expect(lastCode(user.email)).toMatch(/^\d{6}$/);
   });
 
-  it("stores only a hash of each link's token", async () => {
+  it("rejects expired codes", async () => {
+    const user = await registerUser();
+    const db = await getDb();
+    await db.update(s.emailTokens).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(s.emailTokens.userId, user.id));
+    expect(await verifyEmailCode(user.email, lastCode(user.email))).toBe("expired");
+  });
+
+  it("stores only a salted hash of each code", async () => {
     const user = await registerUser();
     const db = await getDb();
     const rows = await db.select().from(s.emailTokens).where(eq(s.emailTokens.userId, user.id));
     expect(rows).toHaveLength(1);
-    expect(rows[0].tokenHash).not.toContain(lastToken(user.email));
+    expect(rows[0].tokenHash).not.toContain(lastCode(user.email));
+    expect(rows[0].tokenHash).not.toBe(createHash("sha256").update(lastCode(user.email)).digest("hex"));
   });
 });
 
 describe("changing the email address", () => {
-  it("asks to confirm the new address, tells the old one, and old links stop working", async () => {
+  it("asks to confirm the new address, tells the old one, and old codes stop working", async () => {
     const user = await registerUser();
-    const oldLink = lastToken(user.email);
+    const oldCode = lastCode(user.email);
     signIn(user);
     const res = await settings.PATCH(req("PATCH", "/api/settings", { email: "Robin.New@Example.com", password: user.password }));
     expect(await res.json()).toMatchObject({ email: "robin.new@example.com", emailVerified: false });
-    const [confirm, notice] = [sent().find((e) => e.to === "robin.new@example.com")!, sent().find((e) => e.to === user.email && !e.action)!];
-    expect(confirm.subject).toBe("Confirm your email address for PlanAway");
+    const [confirmEmail, notice] = [sent().find((e) => e.to === "robin.new@example.com")!, sent().find((e) => e.to === user.email && !e.code)!];
+    expect(confirmEmail.subject).toBe("Confirm your email address for PlanAway");
     expect(notice.subject).toBe("Your PlanAway email address was changed");
     expect(notice.lines.join(" ")).toContain("robin.new@example.com");
-    expect(await verifyEmail(oldLink)).toBe("invalid");
-    expect(await verifyEmail(lastToken("robin.new@example.com"))).toBe("verified");
+    // The account's address is the new one now; the old address has no account.
+    expect(await verifyEmailCode(user.email, oldCode)).toBe("wrong");
+    const newCode = lastCode("robin.new@example.com");
+    if (newCode !== oldCode) expect(await verifyEmailCode("robin.new@example.com", oldCode)).toBe("wrong");
+    expect(await verifyEmailCode("robin.new@example.com", newCode)).toBe("verified");
   });
 
   it("sends nothing when the address doesn't change", async () => {
@@ -298,13 +343,13 @@ describe("downloading your data", () => {
 });
 
 describe("email content", () => {
-  it("says who sent it, and links in both the text and HTML versions", () => {
+  it("says who sent it, and gives the code in both the text and HTML versions", () => {
     vi.stubEnv("OPERATOR_NAME", "Jordan Lee");
     vi.stubEnv("CONTACT_EMAIL", "help@planaway.test");
-    const email = verifyEmailMessage("a@example.com", "Robin", "https://planaway.example/verify-email?token=abc");
-    expect(renderText(email)).toContain("Confirm email address: https://planaway.example/verify-email?token=abc");
+    const email = verifyEmailMessage("a@example.com", "Robin", "042917");
+    expect(renderText(email)).toContain("\n\n042917\n\n");
     expect(renderText(email)).toContain("PlanAway is operated by Jordan Lee. Questions? Write to help@planaway.test.");
-    expect(renderHtml(email)).toContain('href="https://planaway.example/verify-email?token=abc"');
+    expect(renderHtml(email)).toContain(">042917</p>");
   });
 
   it("never lets what people write become HTML", () => {

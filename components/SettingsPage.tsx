@@ -22,7 +22,7 @@ import { api } from "./client";
 import { ArrowLeftIcon, CategoryIcon, DownloadIcon } from "./icons";
 import { PlaceInput } from "./PlaceInput";
 import { SiteFooter } from "./SiteFooter";
-import { useResendVerification } from "./VerifyEmail";
+import { VerifyCodeForm } from "./VerifyEmail";
 
 const THEME_LABELS: Record<Theme, string> = { system: "Match my device", light: "Light", dark: "Dark" };
 
@@ -124,7 +124,6 @@ function ProfileSection({ profile }: { profile: Profile }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const resender = useResendVerification();
 
   const emailChanged = email.trim().toLowerCase() !== saved.email;
   const birthDateChanged = birthDate !== saved.birthDate;
@@ -147,7 +146,7 @@ function ProfileSection({ profile }: { profile: Profile }) {
       setVerified(updated.emailVerified);
       setStatus({
         kind: "ok",
-        text: emailChanged ? `Profile saved. We sent a link to ${updated.email}: open it to confirm your new address.` : "Profile saved.",
+        text: emailChanged ? `Profile saved. We sent a code to ${updated.email}: enter it below to confirm your new address.` : "Profile saved.",
       });
     } catch (err) {
       setStatus({ kind: "error", text: (err as Error).message });
@@ -233,18 +232,10 @@ function ProfileSection({ profile }: { profile: Profile }) {
         <label htmlFor="settings-email">Email</label>
         <input id="settings-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         {!verified && !emailChanged && (
-          <p className="small email-unverified">
-            <span className="muted">Not confirmed yet: you can plan trips once you open the link we emailed you.</span>{" "}
-            <button type="button" className="link-btn" onClick={resender.resend} disabled={resender.busy}>
-              {resender.busy ? "Sending…" : "Send it again"}
-            </button>
-            {resender.status && (
-              <span className={`settings-status ${resender.status.kind}`} role={resender.status.kind === "error" ? "alert" : "status"}>
-                {" "}
-                {resender.status.text}
-              </span>
-            )}
-          </p>
+          <div className="small email-unverified">
+            <p className="muted">Not confirmed yet: you can plan trips once you enter the code we emailed to {saved.email}.</p>
+            <VerifyCodeForm email={saved.email} onVerified={() => setVerified(true)} />
+          </div>
         )}
         {emailChanged && (
           <>
@@ -257,7 +248,7 @@ function ProfileSection({ profile }: { profile: Profile }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <p className="muted small">You sign in with your email, so changing it takes your password. We&rsquo;ll email the new address a link to confirm it.</p>
+            <p className="muted small">You sign in with your email, so changing it takes your password. We&rsquo;ll email the new address a code to confirm it.</p>
           </>
         )}
         <div className="settings-actions">

@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ContactForm } from "@/components/ContactForm";
@@ -19,29 +19,27 @@ beforeEach(() => {
 const bodyOf = (fetch: ReturnType<typeof mockFetch>, i = 0) => JSON.parse(fetch.mock.calls[i][1]!.body as string);
 
 describe("VerifyEmailPrompt", () => {
-  it("says where the link went, and sends it again", async () => {
-    const fetch = mockFetch(() => ({ sent: true }));
+  it("says where the code went, confirms it, and opens up the app", async () => {
+    const fetch = mockFetch(() => ({ verified: true }));
     render(<VerifyEmailPrompt email="robin@example.com" onOpenSidebar={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Confirm your email" })).toBeInTheDocument();
     expect(screen.getByText("robin@example.com")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Change it in Settings" })).toHaveAttribute("href", "/settings");
-    await userEvent.click(screen.getByRole("button", { name: "Send the email again" }));
-    expect(fetch).toHaveBeenCalledWith("/api/verify-email", expect.objectContaining({ method: "POST" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Sent. Check your inbox");
-  });
-
-  it("shows why it couldn't send", async () => {
-    mockFetch(() => Response.json({ error: "We've sent a few already." }, { status: 429 }));
-    render(<VerifyEmailPrompt email="robin@example.com" onOpenSidebar={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Send the email again" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("We've sent a few already.");
-  });
-
-  it("opens up the app once the address is confirmed in another tab", async () => {
-    mockFetch(() => ({ emailVerified: true }));
-    render(<VerifyEmailPrompt email="robin@example.com" onOpenSidebar={vi.fn()} />);
-    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    const button = screen.getByRole("button", { name: "Confirm email" });
+    expect(button).toBeDisabled();
+    // Only digits go in, six at most.
+    await userEvent.type(screen.getByLabelText("Confirmation code"), "04-29 17 8");
+    expect(screen.getByLabelText("Confirmation code")).toHaveValue("042917");
+    await userEvent.click(button);
+    expect(bodyOf(fetch)).toEqual({ email: "robin@example.com", code: "042917" });
     await vi.waitFor(() => expect(reload).toHaveBeenCalled());
+  });
+
+  it("shows why it couldn't send a new code", async () => {
+    mockFetch(() => Response.json({ error: "We've sent a few codes already." }, { status: 429 }));
+    render(<VerifyEmailPrompt email="robin@example.com" onOpenSidebar={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Send a new code" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("We've sent a few codes already.");
   });
 });
 

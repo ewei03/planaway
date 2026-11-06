@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import bcrypt from "bcryptjs";
 import { and, asc, count, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
@@ -171,10 +171,12 @@ export async function createUser(
   });
 }
 
-// ---------- Email links: confirming an address, resetting a password ----------
+// ---------- Email secrets: a code to confirm an address, a link to reset a password ----------
 
-/** How long each kind of link works. */
-export const EMAIL_TOKEN_TTL_MS: Record<EmailTokenPurpose, number> = { verify: 24 * 60 * 60 * 1000, reset: 60 * 60 * 1000 };
+/** How long each kind works: a confirmation code, a password reset link. */
+export const EMAIL_TOKEN_TTL_MS: Record<EmailTokenPurpose, number> = { verify: 30 * 60 * 1000, reset: 60 * 60 * 1000 };
+/** Wrong guesses allowed per confirmation code, so codes can't be guessed by trying many. */
+export const MAX_CODE_ATTEMPTS = 5;
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -209,20 +211,82 @@ async function tokenUser(db: Db, token: string, purpose: EmailTokenPurpose) {
   return row && row.email === row.current ? row : null;
 }
 
+// A code is short, so its hash is salted with the user: the same code for two
+// people doesn't collide, and a hash can't be matched across accounts.
+const hashCode = (userId: string, code: string) => hashToken(`verify:${userId}:${code}`);
+
 /**
- * Confirms the address a verify link was sent to. "already" when it was
- * confirmed before (the link was opened twice, or by a mail scanner first).
+ * A new 6-digit code to confirm the address `email`. Earlier codes stop
+ * working, so only the newest email counts.
  */
-export async function verifyEmail(token: string): Promise<"verified" | "already" | "invalid"> {
+export async function createVerifyCode(userId: string, email: string): Promise<string> {
   const db = await getDb();
-  const row = await tokenUser(db, token, "verify");
-  if (!row) return "invalid";
-  if (row.verifiedAt) return "already";
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await db.transaction(async (tx) => {
-    await tx.update(s.users).set({ emailVerifiedAt: new Date() }).where(eq(s.users.id, row.userId));
-    await tx.delete(s.emailTokens).where(and(eq(s.emailTokens.userId, row.userId), eq(s.emailTokens.purpose, "verify")));
+    await tx.delete(s.emailTokens).where(and(eq(s.emailTokens.userId, userId), eq(s.emailTokens.purpose, "verify")));
+    await tx.insert(s.emailTokens).values({
+      tokenHash: hashCode(userId, code),
+      userId,
+      purpose: "verify",
+      email: email.trim().toLowerCase(),
+      expiresAt: new Date(Date.now() + EMAIL_TOKEN_TTL_MS.verify),
+    });
+  });
+  return code;
+}
+
+/** Who to send a confirmation code to: an account with this address that isn't confirmed yet. */
+export async function findUnverifiedUser(email: string): Promise<(UserRef & { email: string }) | null> {
+  const db = await getDb();
+  const [u] = await db
+    .select({ id: s.users.id, name: s.users.name, email: s.users.email })
+    .from(s.users)
+    .where(and(eq(s.users.email, email.trim().toLowerCase()), isNull(s.users.emailVerifiedAt)));
+  return u ?? null;
+}
+
+/**
+ * Confirms an address with the code emailed to it. "already" when it was
+ * confirmed before; "wrong" for a code that isn't it; "expired" when there's
+ * no working code (too old, guessed at too often, or sent to an earlier
+ * address), so a new one is needed. An address without an account looks like
+ * a wrong code, so this doesn't tell which have one.
+ */
+export async function verifyEmailCode(email: string, code: string): Promise<"verified" | "already" | "wrong" | "expired"> {
+  const db = await getDb();
+  const [user] = await db
+    .select({ id: s.users.id, email: s.users.email, verifiedAt: s.users.emailVerifiedAt })
+    .from(s.users)
+    .where(eq(s.users.email, email.trim().toLowerCase()));
+  if (!user) return "wrong";
+  if (user.verifiedAt) return "already";
+  // Each try is counted before the code is checked, in one statement, so tries sent at once can't get past the limit.
+  const [row] = await db
+    .update(s.emailTokens)
+    .set({ attempts: sql`${s.emailTokens.attempts} + 1` })
+    .where(
+      and(
+        eq(s.emailTokens.userId, user.id),
+        eq(s.emailTokens.purpose, "verify"),
+        gt(s.emailTokens.expiresAt, new Date()),
+        lt(s.emailTokens.attempts, MAX_CODE_ATTEMPTS),
+      ),
+    )
+    .returning({ tokenHash: s.emailTokens.tokenHash, email: s.emailTokens.email, attempts: s.emailTokens.attempts });
+  if (!row || row.email !== user.email) return "expired";
+  if (row.tokenHash !== hashCode(user.id, code.replace(/\s/g, ""))) return row.attempts >= MAX_CODE_ATTEMPTS ? "expired" : "wrong";
+  await db.transaction(async (tx) => {
+    await tx.update(s.users).set({ emailVerifiedAt: new Date() }).where(eq(s.users.id, user.id));
+    await tx.delete(s.emailTokens).where(and(eq(s.emailTokens.userId, user.id), eq(s.emailTokens.purpose, "verify")));
   });
   return "verified";
+}
+
+/** Whether the account's email address is confirmed. Sign-in waits for it. */
+export async function isEmailVerified(userId: string): Promise<boolean> {
+  const db = await getDb();
+  const [u] = await db.select({ at: s.users.emailVerifiedAt }).from(s.users).where(eq(s.users.id, userId));
+  return Boolean(u?.at);
 }
 
 /** Who to send a password reset to, or null when no account has that address. */
@@ -256,7 +320,7 @@ export async function resetPassword(token: string, password: string): Promise<vo
 async function requireVerified(db: Db, userId: string): Promise<void> {
   const [u] = await db.select({ at: s.users.emailVerifiedAt }).from(s.users).where(eq(s.users.id, userId));
   if (!u) throw new NotFoundError("Account not found");
-  if (!u.at) throw new ForbiddenError("Confirm your email address to plan trips. Check your inbox for the link, or send a new one.");
+  if (!u.at) throw new ForbiddenError("Confirm your email address to plan trips. Enter the code we emailed you, or send a new one.");
 }
 
 // Compared against when the email has no account, so the response time

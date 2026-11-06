@@ -70,7 +70,7 @@ describe("SettingsPage", () => {
     await userEvent.type(profileSection.getByLabelText("Current password"), "secret password");
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
     // The new address needs confirming from a link sent to it.
-    await screen.findByText(/Profile saved\. We sent a link to .*: open it to confirm your new address\./);
+    await screen.findByText(/Profile saved\. We sent a code to .*: enter it below to confirm your new address\./);
     expect(sentTo(fetch, "/api/settings")[0]).toEqual({ name: "Maya", email: "maya@new.example", password: "secret password" });
   });
 
@@ -233,13 +233,19 @@ describe("SettingsPage", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("says when the email isn't confirmed yet, and sends the link again", async () => {
+  it("says when the email isn't confirmed yet, sends a new code, and takes it", async () => {
     const fetch = mockFetch(() => ({ sent: true }));
     render(<SettingsPage profile={{ ...profile(), emailVerified: false }} />);
     expect(screen.getByText(/Not confirmed yet/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Send it again" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send a new code" }));
     expect(fetch).toHaveBeenCalledWith("/api/verify-email", expect.objectContaining({ method: "POST" }));
-    expect(await screen.findByText(/Sent\. Check your inbox/)).toBeInTheDocument();
+    expect(await screen.findByText(/Sent a new code/)).toBeInTheDocument();
+
+    // Enter in the code box confirms it, without saving the profile form around it.
+    await userEvent.type(screen.getByLabelText("Confirmation code"), "042917{Enter}");
+    expect(fetch).toHaveBeenLastCalledWith("/api/verify-email/confirm", expect.objectContaining({ method: "POST" }));
+    expect(fetch.mock.calls.some(([url]) => url === "/api/settings")).toBe(false);
+    await vi.waitFor(() => expect(screen.queryByText(/Not confirmed yet/)).toBeNull());
   });
 
   it("offers a download of your data", () => {

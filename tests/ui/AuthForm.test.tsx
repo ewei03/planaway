@@ -47,7 +47,7 @@ describe("AuthForm", () => {
     expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
   });
 
-  it("registers, then signs in", async () => {
+  it("registers, asks for the emailed code, then signs in", async () => {
     const fetch = mockFetch(() => Response.json({ ok: true }, { status: 201 }));
     signInMock.mockResolvedValue({ ok: true });
     render(<AuthForm callbackUrl="/" />);
@@ -63,8 +63,61 @@ describe("AuthForm", () => {
       password: "secret123",
       birthDate: "1990-04-12",
     });
-    expect(signInMock).toHaveBeenCalled();
+    // Not into the app yet: the code comes first, on the same page.
+    expect(signInMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Check your email" })).toBeInTheDocument();
+    expect(screen.getByText("maya@example.com")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Confirmation code"), "042917");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and sign in" }));
+    expect(fetch.mock.calls[1][0]).toBe("/api/verify-email/confirm");
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ email: "maya@example.com", code: "042917" });
+    expect(signInMock).toHaveBeenCalledWith("credentials", { email: "maya@example.com", password: "secret123", redirect: false });
     expect(assign).toHaveBeenCalledWith("/");
+  });
+
+  it("shows a wrong code, and sends a new one", async () => {
+    const fetch = mockFetch((url) =>
+      url === "/api/verify-email/confirm" ? Response.json({ error: "That code isn't right." }, { status: 400 }) : Response.json({ ok: true }, { status: 201 }),
+    );
+    render(<AuthForm callbackUrl="/" />);
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await userEvent.type(screen.getByLabelText("Confirmation code"), "111111{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("That code isn't right.");
+    expect(signInMock).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Send a new code" }));
+    expect(fetch).toHaveBeenLastCalledWith("/api/verify-email", expect.objectContaining({ method: "POST", body: JSON.stringify({ email: "maya@example.com" }) }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Sent a new code");
+  });
+
+  it("asks for a code when an unconfirmed account signs in", async () => {
+    const fetch = mockFetch(() => ({ sent: true }));
+    signInMock.mockResolvedValueOnce({ error: "CredentialsSignin", code: "unverified" }).mockResolvedValueOnce({ ok: true });
+    render(<AuthForm callbackUrl="/trips" />);
+    await fill({ Email: "maya@example.com", Password: "secret123" });
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { name: "Check your email" })).toBeInTheDocument();
+    expect(fetch.mock.calls[0][0]).toBe("/api/verify-email");
+    expect(screen.getByRole("status")).toHaveTextContent("we sent you a new code");
+    expect(assign).not.toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText("Confirmation code"), "042917");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and sign in" }));
+    expect(assign).toHaveBeenCalledWith("/trips");
+
+  });
+
+  it("goes back to signing in from the code step", async () => {
+    mockFetch(() => Response.json({ ok: true }, { status: 201 }));
+    render(<AuthForm callbackUrl="/" />);
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
   });
 
   it("shows registration errors from the server without signing in", async () => {

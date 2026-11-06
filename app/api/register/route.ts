@@ -20,6 +20,6 @@ export const POST = handler(async (req: Request) => {
   if (birthDateError) return jsonError(birthDateError, 400);
   const user = await createUser(name, email, password, b.birthDate as string);
   // The account exists either way: if the email can't go now, "Send it again" can retry.
-  await sendVerification(req, { ...user, email: email.toLowerCase() }).catch((err) => console.error("Couldn't send the confirmation email:", err));
+  await sendVerification({ ...user, email: email.toLowerCase() }).catch((err) => console.error("Couldn't send the confirmation email:", err));
   return Response.json({ ok: true }, { status: 201 });
 });

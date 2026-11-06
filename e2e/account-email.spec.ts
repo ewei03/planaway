@@ -1,22 +1,45 @@
 import { expect, test } from "@playwright/test";
-import { account, confirmEmail, lastEmail, register, signIn, signOut, waitForHydration } from "./helpers";
+import { account, enterCode, lastEmail, register, signIn, signOut, waitForHydration } from "./helpers";
 
-test("a new account confirms its email before planning", async ({ page }) => {
+test("a new account enters the emailed code before it's let in", async ({ page }) => {
   const who = account("Confirm");
   await register(page, who, { confirm: false });
-  await expect(page.getByRole("heading", { name: "Confirm your email" })).toBeVisible();
+  // Still on the sign-up page, asking for the code.
+  await expect(page).toHaveURL(/\/login/);
   await expect(page.getByText(who.email)).toBeVisible();
-  await expect(page.getByLabel("Your trip idea")).toHaveCount(0);
 
-  // A new email replaces the first; the newest link works.
-  await page.getByRole("button", { name: "Send the email again" }).click();
-  await expect(page.getByRole("status")).toContainText("Sent. Check your inbox");
+  // A wrong code is refused.
+  await page.getByLabel("Confirmation code").fill("000000");
+  await page.getByRole("button", { name: "Confirm and sign in" }).click();
+  const first = await lastEmail(who.email, { subject: /Confirm your email/ });
+  if (first.code !== "000000") await expect(page.locator(".form-error")).toContainText("isn't right");
+
+  // A new email replaces the first; the newest code works.
+  await page.getByRole("button", { name: "Send a new code" }).click();
+  await expect(page.getByRole("status")).toContainText("Sent a new code");
+  await expect.poll(async () => (await lastEmail(who.email, { subject: /Confirm your email/ })).text).not.toBe(first.text);
   const email = await lastEmail(who.email, { subject: /Confirm your email/ });
   expect(email.text).toContain("PlanAway is operated by Test Operator.");
+  expect(email.code).toMatch(/^\d{6}$/);
 
-  await page.goto(email.action!.url);
-  await expect(page.getByRole("heading", { name: "Email confirmed" })).toBeVisible();
-  await page.getByRole("link", { name: "Start planning" }).click();
+  await enterCode(page, who);
+  await expect(page).toHaveURL("/");
+  await expect(page.getByLabel("Your trip idea")).toBeVisible();
+});
+
+test("signing in before confirming asks for a code first", async ({ page }) => {
+  const who = account("Later");
+  await register(page, who, { confirm: false });
+  await page.goto("/login");
+  await waitForHydration(page, "#email");
+  await page.getByLabel("Email").fill(who.email);
+  await page.getByLabel("Password", { exact: true }).fill(who.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("we sent you a new code");
+  await expect(page).toHaveURL(/\/login/);
+
+  await enterCode(page, who);
   await expect(page.getByLabel("Your trip idea")).toBeVisible();
 });
 
@@ -62,13 +85,15 @@ test("changing your email asks to confirm the new address", async ({ page }) => 
   await profile.getByLabel("Email").fill(moved);
   await profile.getByLabel("Current password").fill(who.password);
   await page.getByRole("button", { name: "Save profile" }).click();
-  await expect(page.getByText(`We sent a link to ${moved}`)).toBeVisible();
+  await expect(page.getByText(`We sent a code to ${moved}`)).toBeVisible();
   await page.reload();
   await expect(page.getByText(/Not confirmed yet/)).toBeVisible();
 
   const notice = await lastEmail(who.email, { subject: /email address was changed/ });
   expect(notice.text).toContain(moved);
-  await confirmEmail(page, { ...who, email: moved });
+  await waitForHydration(page, "#verify-code");
+  await enterCode(page, { ...who, email: moved });
+  await expect(page.getByText(/Not confirmed yet/)).toHaveCount(0);
   await page.reload();
   await expect(page.getByText(/Not confirmed yet/)).toHaveCount(0);
 });
