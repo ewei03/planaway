@@ -65,7 +65,7 @@ describe("ForgotPasswordContact", () => {
 
   it("names who runs PlanAway when there's no contact address", () => {
     render(<ForgotPasswordContact contactEmail={null} operator="Test Operator" />);
-    expect(screen.getByRole("note")).toHaveTextContent("get in touch with Test Operator.");
+    expect(screen.getByRole("note")).toHaveTextContent("To reset your password, contact Test Operator via email.");
     expect(screen.getByRole("link", { name: "Back to sign in" })).toHaveAttribute("href", "/login");
   });
 });

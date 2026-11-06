@@ -74,16 +74,18 @@ ${button}
 /** Sends an email; throws if the provider refuses it. */
 export async function sendEmail(email: Email): Promise<void> {
   const message = { from: from(), to: email.to, replyTo: email.replyTo, subject: email.subject, text: renderText(email), html: renderHtml(email) };
-  const mailer = transport();
-  if (mailer) {
-    await mailer.sendMail(message);
-    return;
-  }
+  // The outbox wins over SMTP: the end-to-end server also loads .env, and its
+  // made-up addresses must never reach a real provider.
   const outbox = process.env.EMAIL_OUTBOX_DIR;
   if (outbox) {
     await mkdir(outbox, { recursive: true });
     const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
     await writeFile(path.join(outbox, name), JSON.stringify({ ...message, action: email.action ?? null, code: email.code ?? null }, null, 2));
+    return;
+  }
+  const mailer = transport();
+  if (mailer) {
+    await mailer.sendMail(message);
     return;
   }
   if (process.env.NODE_ENV === "production") console.warn(`SMTP_HOST isn't set, so this email to ${email.to} wasn't sent: "${email.subject}".`);
