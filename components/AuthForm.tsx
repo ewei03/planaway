@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { today } from "@/lib/account";
 import { AuthArt } from "./AuthArt";
 import { api } from "./client";
@@ -21,6 +21,16 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
   const [birthDate, setBirthDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The notice is shown once: switching views clears it, and it's taken out of
+  // the address (?deleted=1, ?reset=1) so reloading or coming back doesn't repeat it.
+  const [shownNotice, setShownNotice] = useState(notice);
+  useEffect(() => {
+    if (!notice) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("deleted");
+    url.searchParams.delete("reset");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }, [notice]);
 
   /**
    * Going to another view (sign in, create account) starts it empty: nothing
@@ -35,6 +45,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
     setBirthDate("");
     setError(null);
     setVerifyStatus(null);
+    setShownNotice(undefined);
     setMode(next);
   };
 
@@ -136,9 +147,9 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
           </div>
           <h1>{registering ? "Create your account" : "Welcome back"}</h1>
           <p className="muted">{registering ? "Plan trips together with your friends." : "Sign in to your trips."}</p>
-          {notice && (
+          {shownNotice && (
             <p className="auth-notice" role="status">
-              {notice}
+              {shownNotice}
             </p>
           )}
 

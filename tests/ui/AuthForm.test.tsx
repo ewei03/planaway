@@ -27,6 +27,18 @@ async function fill(fields: Record<string, string>) {
 }
 
 describe("AuthForm", () => {
+  it("shows a notice once: it leaves the address, and switching views clears it", async () => {
+    vi.unstubAllGlobals(); // the real location, which follows history.replaceState
+    window.history.replaceState(null, "", "/login?deleted=1&callbackUrl=%2Ftrips");
+    render(<AuthForm callbackUrl="/trips" notice="Your account has been deleted." />);
+    expect(screen.getByRole("status")).toHaveTextContent("Your account has been deleted.");
+    expect(window.location.pathname + window.location.search).toBe("/login?callbackUrl=%2Ftrips");
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    expect(screen.queryByText("Your account has been deleted.")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(screen.queryByText("Your account has been deleted.")).not.toBeInTheDocument();
+  });
+
   it("signs in and navigates to the callback URL", async () => {
     signInMock.mockResolvedValue({ ok: true, error: undefined });
     render(<AuthForm callbackUrl="/invite/abc" />);

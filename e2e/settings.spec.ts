@@ -47,8 +47,12 @@ test("delete your account from settings", async ({ page }) => {
   await page.getByLabel("Enter your password to confirm").fill(who.password);
   await page.getByRole("button", { name: "Delete my account" }).click();
 
-  await expect(page).toHaveURL(/\/login\?deleted=1/);
   await expect(page.getByText("Your account has been deleted.")).toBeVisible();
+  // Shown once: it leaves the address, so reloading doesn't bring it back.
+  await expect(page).toHaveURL(/\/login$/);
+  await page.reload();
+  await waitForHydration(page, "#email");
+  await expect(page.getByText("Your account has been deleted.")).toHaveCount(0);
 
   // The old details no longer sign in.
   await page.getByLabel("Email").fill(who.email);
