@@ -54,7 +54,7 @@ describe("AuthForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
     expect(screen.getByRole("heading", { name: "Create your account" })).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toHaveAttribute("minLength", "8");
-    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123" });
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
     await userEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect(fetch.mock.calls[0][0]).toBe("/api/register");
     expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({
@@ -71,10 +71,26 @@ describe("AuthForm", () => {
     mockFetch(() => Response.json({ error: "An account with that email already exists." }, { status: 409 }));
     render(<AuthForm callbackUrl="/" />);
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
-    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123" });
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
     await userEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect(screen.getByRole("alert")).toHaveTextContent("already exists");
     expect(signInMock).not.toHaveBeenCalled();
+  });
+
+  it("won't register when the passwords don't match", async () => {
+    const fetch = mockFetch(() => Response.json({ ok: true }, { status: 201 }));
+    render(<AuthForm callbackUrl="/" />);
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret124" });
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("The passwords don't match.");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(signInMock).not.toHaveBeenCalled();
+  });
+
+  it("asks for the password only once when signing in", () => {
+    render(<AuthForm callbackUrl="/" />);
+    expect(screen.queryByLabelText("Confirm password")).toBeNull();
   });
 
   it("clears the error when switching modes", async () => {

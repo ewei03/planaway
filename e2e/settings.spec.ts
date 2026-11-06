@@ -52,7 +52,7 @@ test("delete your account from settings", async ({ page }) => {
 
   // The old details no longer sign in.
   await page.getByLabel("Email").fill(who.email);
-  await page.getByLabel("Password").fill(who.password);
+  await page.getByLabel("Password", { exact: true }).fill(who.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText("Wrong email or password.")).toBeVisible();
 });

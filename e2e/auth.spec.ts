@@ -25,7 +25,7 @@ test("wrong password shows an error", async ({ page }) => {
   await register(page, sam);
   await signOut(page);
   await page.getByLabel("Email").fill(sam.email);
-  await page.getByLabel("Password").fill("not the password");
+  await page.getByLabel("Password", { exact: true }).fill("not the password");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.locator(".form-error")).toHaveText("Wrong email or password.");
 });
@@ -38,7 +38,8 @@ test("duplicate registration is refused", async ({ page }) => {
   await page.getByLabel("Name").fill("Lee again");
   await page.getByLabel("Date of birth").fill("1990-04-12");
   await page.getByLabel("Email").fill(lee.email);
-  await page.getByLabel("Password").fill(lee.password);
+  await page.getByLabel("Password", { exact: true }).fill(lee.password);
+  await page.getByLabel("Confirm password").fill(lee.password);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.locator(".form-error")).toContainText("already exists");
 });
@@ -50,7 +51,8 @@ test("people under 13 can't sign up", async ({ page }) => {
   await page.getByLabel("Name").fill(young.name);
   await page.getByLabel("Date of birth").fill(`${new Date().getFullYear() - 10}-06-01`);
   await page.getByLabel("Email").fill(young.email);
-  await page.getByLabel("Password").fill(young.password);
+  await page.getByLabel("Password", { exact: true }).fill(young.password);
+  await page.getByLabel("Confirm password").fill(young.password);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.locator(".form-error")).toHaveText("Sorry, you need to be at least 13 to use PlanAway.");
   await expect(page).toHaveURL(/\/login/);
@@ -62,7 +64,7 @@ test("the login page won't redirect off-site after sign-in", async ({ page }) =>
   await signOut(page);
   await page.goto("/login?callbackUrl=//evil.example.com");
   await page.getByLabel("Email").fill(kai.email);
-  await page.getByLabel("Password").fill(kai.password);
+  await page.getByLabel("Password", { exact: true }).fill(kai.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL("/");
 });

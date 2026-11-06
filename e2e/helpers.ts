@@ -51,7 +51,8 @@ export async function register(page: Page, who: Account, { goto = true, confirm 
   await page.getByLabel("Name").fill(who.name);
   await page.getByLabel("Date of birth").fill("1990-04-12");
   await page.getByLabel("Email").fill(who.email);
-  await page.getByLabel("Password").fill(who.password);
+  await page.getByLabel("Password", { exact: true }).fill(who.password);
+  await page.getByLabel("Confirm password").fill(who.password);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).not.toHaveURL(/\/login/);
   if (!confirm) return;
@@ -62,7 +63,7 @@ export async function register(page: Page, who: Account, { goto = true, confirm 
 export async function signIn(page: Page, who: Account) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(who.email);
-  await page.getByLabel("Password").fill(who.password);
+  await page.getByLabel("Password", { exact: true }).fill(who.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }

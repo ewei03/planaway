@@ -14,6 +14,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -21,6 +22,10 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (mode === "register" && password !== confirmPassword) {
+      setError("The passwords don't match.");
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "register") {
@@ -97,7 +102,18 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
               onChange={(e) => setPassword(e.target.value)}
             />
             {registering ? (
-              <p className="muted small">At least 8 characters.</p>
+              <>
+                <p className="muted small">At least 8 characters.</p>
+                <label htmlFor="confirm-password">Confirm password</label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </>
             ) : (
               <p className="small auth-forgot">
                 <Link href="/forgot-password">Forgot password?</Link>
