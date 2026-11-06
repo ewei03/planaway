@@ -92,7 +92,7 @@ export function VerifyCodeForm({
         <button type="button" className="link-btn" onClick={resend} disabled={sending}>
           {sending ? "Sending…" : "Send a new code"}
         </button>
-        . Codes work for 30 minutes; a new one replaces the old.
+        . Codes work for 30 minutes.
       </p>
     </div>
   );

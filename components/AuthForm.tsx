@@ -57,7 +57,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
       if (!(await signInAndGo())) {
         // Signed up earlier but never confirmed: send a fresh code and ask for it.
         const sent = await sendVerifyCode(email);
-        setVerifyStatus(sent?.kind === "error" ? sent : { kind: "ok", text: "Your email isn't confirmed yet, so we sent you a new code." });
+        setVerifyStatus(sent?.kind === "error" ? sent : { kind: "ok", text: "" });
         setMode("verify");
       }
     } catch (err) {
@@ -89,7 +89,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
             </p>
             <VerifyCodeForm email={email} onVerified={finishVerifying} initialStatus={verifyStatus} submitLabel="Confirm and sign in" />
             <p className="auth-switch muted">
-              Wrong address or done for now?{" "}
+              {" "}
               <button
                 className="link-btn"
                 onClick={() => {
