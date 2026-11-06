@@ -2,6 +2,7 @@ import { birthDateProblem, passwordProblem } from "@/lib/account";
 import { sendVerification } from "@/lib/accountEmails";
 import { body, handler, jsonError, str } from "@/lib/http";
 import { allow, clientIp } from "@/lib/rateLimit";
+import { emailVerificationOn } from "@/lib/site";
 import { createUser } from "@/lib/store";
 
 export const POST = handler(async (req: Request) => {
@@ -18,8 +19,11 @@ export const POST = handler(async (req: Request) => {
   // Checked before anything is stored, so nothing is kept about an under-13.
   const birthDateError = birthDateProblem(b.birthDate);
   if (birthDateError) return jsonError(birthDateError, 400);
-  const user = await createUser(name, email, password, b.birthDate as string);
-  // The account exists either way: if the email can't go now, "Send it again" can retry.
+  const verify = emailVerificationOn();
+  const user = await createUser(name, email, password, b.birthDate as string, { verified: !verify });
+  // `verify`: the sign-up page asks for the emailed code before signing in.
+  if (!verify) return Response.json({ ok: true, verify: false }, { status: 201 });
+  // The account exists either way: if the email can't go now, "Send a new code" can retry.
   await sendVerification({ ...user, email: email.toLowerCase() }).catch((err) => console.error("Couldn't send the confirmation email:", err));
-  return Response.json({ ok: true }, { status: 201 });
+  return Response.json({ ok: true, verify: true }, { status: 201 });
 });

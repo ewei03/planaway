@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ContactForm } from "@/components/ContactForm";
-import { ForgotPasswordForm, ResetPasswordForm } from "@/components/PasswordReset";
+import { ForgotPasswordContact, ForgotPasswordForm, ResetPasswordForm } from "@/components/PasswordReset";
 import { VerifyEmailPrompt } from "@/components/VerifyEmail";
 import { mockFetch } from "./fixtures";
 
@@ -52,6 +52,21 @@ describe("ForgotPasswordForm", () => {
     expect(bodyOf(fetch)).toEqual({ email: "robin@example.com" });
     expect(await screen.findByRole("heading", { name: "Check your email" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("If there’s a PlanAway account for robin@example.com");
+  });
+});
+
+describe("ForgotPasswordContact", () => {
+  it("says to email the contact address, since reset emails can't be sent", () => {
+    render(<ForgotPasswordContact contactEmail="help@example.com" operator="Test Operator" />);
+    expect(screen.getByRole("note")).toHaveTextContent("Password reset emails aren’t set up yet. To reset your password, email help@example.com");
+    expect(screen.getByRole("link", { name: "help@example.com" })).toHaveAttribute("href", "mailto:help@example.com?subject=PlanAway%20password%20reset");
+    expect(screen.queryByRole("button", { name: "Send reset link" })).not.toBeInTheDocument();
+  });
+
+  it("names who runs PlanAway when there's no contact address", () => {
+    render(<ForgotPasswordContact contactEmail={null} operator="Test Operator" />);
+    expect(screen.getByRole("note")).toHaveTextContent("get in touch with Test Operator.");
+    expect(screen.getByRole("link", { name: "Back to sign in" })).toHaveAttribute("href", "/login");
   });
 });
 

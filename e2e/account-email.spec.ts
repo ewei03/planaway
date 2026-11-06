@@ -36,7 +36,7 @@ test("signing in before confirming asks for a code first", async ({ page }) => {
   await page.getByLabel("Password", { exact: true }).fill(who.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("we sent you a new code");
+  await expect(page.locator(".settings-status")).toHaveCount(0);
   await expect(page).toHaveURL(/\/login/);
 
   await enterCode(page, who);

@@ -1,5 +1,6 @@
 import { sendEmailChanged, sendVerification } from "@/lib/accountEmails";
 import { body, handler, jsonError, requireUser, str } from "@/lib/http";
+import { emailVerificationOn } from "@/lib/site";
 import { changeEmail, deleteAccount, getProfile, renameUser, setBirthDate } from "@/lib/store";
 
 /** The signed-in user's profile and settings. */
@@ -32,7 +33,7 @@ export const PATCH = handler(async (req: Request) => {
       const { name } = await getProfile(user.id);
       // The change is made either way; the confirmation can be sent again from Settings.
       await Promise.all([
-        sendVerification({ id: user.id, name, email: email.toLowerCase() }),
+        emailVerificationOn() ? sendVerification({ id: user.id, name, email: email.toLowerCase() }) : undefined,
         sendEmailChanged(previous, name, email.toLowerCase()),
       ]).catch((err) => console.error("Couldn't send the email change emails:", err));
     }

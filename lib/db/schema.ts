@@ -68,6 +68,22 @@ export const emailTokens = pgTable(
   (t) => [index("email_tokens_user_idx").on(t.userId, t.purpose)],
 );
 
+/**
+ * When each agent turn was started, and by whom, for the daily limit per
+ * account. Kept apart from the chat, so deleting a trip doesn't reset it.
+ */
+export const agentTurns = pgTable(
+  "agent_turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("agent_turns_user_idx").on(t.userId, t.createdAt)],
+);
+
 /** owner: the trip's creator, who shares and deletes it; editor: plan with the agent; viewer: read and comment. */
 export const roleEnum = pgEnum("group_role", ["owner", "editor", "viewer"]);
 export type Role = (typeof roleEnum.enumValues)[number];

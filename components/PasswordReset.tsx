@@ -62,6 +62,32 @@ export function ForgotPasswordForm() {
   );
 }
 
+/**
+ * Shown instead of the form while this server can't send email (no SMTP_HOST):
+ * a reset link would never arrive, so it says who to ask instead.
+ */
+export function ForgotPasswordContact({ contactEmail, operator }: { contactEmail: string | null; operator: string }) {
+  return (
+    <>
+      <h1>Forgot your password?</h1>
+      <p className="muted" role="note">
+        Password reset emails aren&rsquo;t set up yet.{" "}
+        {contactEmail ? (
+          <>
+            To reset your password, email <a href={`mailto:${contactEmail}?subject=${encodeURIComponent("PlanAway password reset")}`}>{contactEmail}</a>{" "}
+            from the address you sign in with.
+          </>
+        ) : (
+          <>To reset your password, contact {operator} via email.</>
+        )}
+      </p>
+      <Link className="btn primary block" href="/login">
+        Back to sign in
+      </Link>
+    </>
+  );
+}
+
 /** Sets a new password from the link in a reset email, then sends you to sign in with it. */
 export function ResetPasswordForm({ token }: { token: string }) {
   const [password, setPassword] = useState("");

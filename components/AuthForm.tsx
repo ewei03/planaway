@@ -22,6 +22,22 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Going to another view (sign in, create account) starts it empty: nothing
+   * typed or shown in the last one carries over. The browser can still fill in
+   * what it has saved, since each view's inputs are new.
+   */
+  const switchTo = (next: "signin" | "register") => {
+    setName("");
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setBirthDate("");
+    setError(null);
+    setVerifyStatus(null);
+    setMode(next);
+  };
+
   /** Signs in with the details typed above, and opens the app. Returns false when the address still needs its code. */
   const signInAndGo = async (): Promise<boolean> => {
     const res = await signIn("credentials", { email, password, redirect: false });
@@ -48,16 +64,19 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
     setBusy(true);
     try {
       if (mode === "register") {
-        // Registering emails a code; the app opens once it's entered.
-        await api("/api/register", { method: "POST", body: JSON.stringify({ name, email, password, birthDate }) });
-        setVerifyStatus(null);
-        setMode("verify");
-        return;
+        const { verify } = await api<{ verify?: boolean }>("/api/register", { method: "POST", body: JSON.stringify({ name, email, password, birthDate }) });
+        if (verify) {
+          // A code was emailed; the app opens once it's entered.
+          setVerifyStatus(null);
+          setMode("verify");
+          return;
+        }
+        // Addresses aren't confirmed on this server: straight in.
       }
       if (!(await signInAndGo())) {
         // Signed up earlier but never confirmed: send a fresh code and ask for it.
         const sent = await sendVerifyCode(email);
-        setVerifyStatus(sent?.kind === "error" ? sent : { kind: "ok", text: "" });
+        setVerifyStatus(sent?.kind === "error" ? sent : null);
         setMode("verify");
       }
     } catch (err) {
@@ -90,13 +109,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
             <VerifyCodeForm email={email} onVerified={finishVerifying} initialStatus={verifyStatus} submitLabel="Confirm and sign in" />
             <p className="auth-switch muted">
               {" "}
-              <button
-                className="link-btn"
-                onClick={() => {
-                  setMode("signin");
-                  setError(null);
-                }}
-              >
+              <button className="link-btn" onClick={() => switchTo("signin")}>
                 Back to sign in
               </button>
             </p>
@@ -113,7 +126,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
     <div className="auth-split">
       <AuthArt />
       <main className="auth-page">
-        {/* Keyed by mode so switching between sign-in and sign-up replays the entrance; the typed values live in state above. */}
+        {/* Keyed by mode so switching between sign-in and sign-up replays the entrance, with new (empty) inputs. */}
         <div className="auth-card" key={mode}>
           <div className="brand">
             <span className="logo" aria-hidden="true">
@@ -185,7 +198,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
             {registering && (
               <p className="muted small auth-legal">
                 By creating an account, you agree to the <Link href="/terms">Terms of Use</Link> and acknowledge the{" "}
-                <Link href="/privacy">Privacy Policy</Link>. We&rsquo;ll email you a link to confirm your address.
+                <Link href="/privacy">Privacy Policy</Link>.
               </p>
             )}
             <button className="btn primary block" disabled={busy}>
@@ -195,13 +208,7 @@ export function AuthForm({ callbackUrl, notice }: { callbackUrl: string; /** A m
 
           <p className="auth-switch muted">
             {registering ? "Already have an account?" : "New to PlanAway?"}{" "}
-            <button
-              className="link-btn"
-              onClick={() => {
-                setMode(registering ? "signin" : "register");
-                setError(null);
-              }}
-            >
+            <button className="link-btn" onClick={() => switchTo(registering ? "signin" : "register")}>
               {registering ? "Sign in" : "Create an account"}
             </button>
           </p>

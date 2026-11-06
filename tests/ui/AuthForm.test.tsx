@@ -48,7 +48,7 @@ describe("AuthForm", () => {
   });
 
   it("registers, asks for the emailed code, then signs in", async () => {
-    const fetch = mockFetch(() => Response.json({ ok: true }, { status: 201 }));
+    const fetch = mockFetch(() => Response.json({ ok: true, verify: true }, { status: 201 }));
     signInMock.mockResolvedValue({ ok: true });
     render(<AuthForm callbackUrl="/" />);
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
@@ -76,9 +76,21 @@ describe("AuthForm", () => {
     expect(assign).toHaveBeenCalledWith("/");
   });
 
+  it("signs straight in after registering when addresses aren't confirmed", async () => {
+    mockFetch(() => Response.json({ ok: true, verify: false }, { status: 201 }));
+    signInMock.mockResolvedValue({ ok: true });
+    render(<AuthForm callbackUrl="/" />);
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(signInMock).toHaveBeenCalledWith("credentials", { email: "maya@example.com", password: "secret123", redirect: false });
+    expect(assign).toHaveBeenCalledWith("/");
+    expect(screen.queryByRole("heading", { name: "Check your email" })).toBeNull();
+  });
+
   it("shows a wrong code, and sends a new one", async () => {
     const fetch = mockFetch((url) =>
-      url === "/api/verify-email/confirm" ? Response.json({ error: "That code isn't right." }, { status: 400 }) : Response.json({ ok: true }, { status: 201 }),
+      url === "/api/verify-email/confirm" ? Response.json({ error: "That code isn't right." }, { status: 400 }) : Response.json({ ok: true, verify: true }, { status: 201 }),
     );
     render(<AuthForm callbackUrl="/" />);
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
@@ -101,7 +113,7 @@ describe("AuthForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("heading", { name: "Check your email" })).toBeInTheDocument();
     expect(fetch.mock.calls[0][0]).toBe("/api/verify-email");
-    expect(screen.getByRole("status")).toHaveTextContent("we sent you a new code");
+    expect(screen.queryByRole("status")).toBeNull();
     expect(assign).not.toHaveBeenCalled();
 
     await userEvent.type(screen.getByLabelText("Confirmation code"), "042917");
@@ -111,7 +123,7 @@ describe("AuthForm", () => {
   });
 
   it("goes back to signing in from the code step", async () => {
-    mockFetch(() => Response.json({ ok: true }, { status: 201 }));
+    mockFetch(() => Response.json({ ok: true, verify: true }, { status: 201 }));
     render(<AuthForm callbackUrl="/" />);
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
     await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
@@ -131,7 +143,7 @@ describe("AuthForm", () => {
   });
 
   it("won't register when the passwords don't match", async () => {
-    const fetch = mockFetch(() => Response.json({ ok: true }, { status: 201 }));
+    const fetch = mockFetch(() => Response.json({ ok: true, verify: true }, { status: 201 }));
     render(<AuthForm callbackUrl="/" />);
     await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
     await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret124" });
@@ -144,6 +156,38 @@ describe("AuthForm", () => {
   it("asks for the password only once when signing in", () => {
     render(<AuthForm callbackUrl="/" />);
     expect(screen.queryByLabelText("Confirm password")).toBeNull();
+  });
+
+  it("starts each view empty: nothing typed or shown carries over", async () => {
+    mockFetch(() => Response.json({ error: "An account with that email already exists." }, { status: 409 }));
+    render(<AuthForm callbackUrl="/" />);
+    await fill({ Email: "a@b.co", Password: "secret123" });
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    for (const label of ["Name", "Date of birth", "Email", "Password", "Confirm password"]) expect(screen.getByLabelText(label)).toHaveValue("");
+
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("already exists");
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(screen.getByLabelText("Email")).toHaveValue("");
+    expect(screen.getByLabelText("Password")).toHaveValue("");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    // And back again: the sign-up details are gone too.
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    for (const label of ["Name", "Date of birth", "Email", "Password", "Confirm password"]) expect(screen.getByLabelText(label)).toHaveValue("");
+  });
+
+  it("starts sign-in empty after backing out of the code step", async () => {
+    mockFetch(() => Response.json({ ok: true, verify: true }, { status: 201 }));
+    render(<AuthForm callbackUrl="/" />);
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    await fill({ Name: "Maya", "Date of birth": "1990-04-12", Email: "maya@example.com", Password: "secret123", "Confirm password": "secret123" });
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await userEvent.type(screen.getByLabelText("Confirmation code"), "12");
+    await userEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+    expect(screen.getByLabelText("Email")).toHaveValue("");
+    expect(screen.getByLabelText("Password")).toHaveValue("");
   });
 
   it("clears the error when switching modes", async () => {

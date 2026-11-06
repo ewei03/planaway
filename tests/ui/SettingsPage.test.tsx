@@ -22,7 +22,8 @@ const profile = (settings: Partial<UserSettings> = {}): Profile => ({
 const OAKLAND = { kind: "city", label: "Oakland", detail: "California, United States", value: "Oakland, California, United States" };
 
 /** Answers each settings call the way the server would, echoing what was sent. */
-function server() {
+/** Answers like the API. `confirming`: a new address needs a code (EMAIL_VERIFICATION=on). */
+function server({ confirming = true } = {}) {
   return mockFetch((url, init) => {
     const sent = init?.body ? JSON.parse(String(init.body)) : null;
     if (url.startsWith("/api/places/suggest")) return { suggestions: [OAKLAND] };
@@ -30,7 +31,10 @@ function server() {
     if (url === "/api/settings" && init?.method === "DELETE") {
       return sent.password === "right password" ? null : Response.json({ error: "That password isn't right." }, { status: 403 });
     }
-    if (url === "/api/settings") return { ...profile(), ...sent, password: undefined };
+    if (url === "/api/settings") {
+      const moved = confirming && sent?.email && sent.email !== profile().email;
+      return { ...profile(), ...sent, ...(moved ? { emailVerified: false } : {}), password: undefined };
+    }
     if (url === "/api/settings/password") {
       return sent.current === "old password" ? null : Response.json({ error: "Your current password isn't right." }, { status: 403 });
     }
@@ -69,9 +73,22 @@ describe("SettingsPage", () => {
     await userEvent.type(screen.getByLabelText("Email"), "maya@new.example");
     await userEvent.type(profileSection.getByLabelText("Current password"), "secret password");
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
-    // The new address needs confirming from a link sent to it.
+    // The new address needs confirming with a code sent to it.
     await screen.findByText(/Profile saved\. We sent a code to .*: enter it below to confirm your new address\./);
     expect(sentTo(fetch, "/api/settings")[0]).toEqual({ name: "Maya", email: "maya@new.example", password: "secret password" });
+    expect(screen.getByLabelText("Confirmation code")).toBeInTheDocument();
+  });
+
+  it("just saves a new email when addresses aren't confirmed", async () => {
+    server({ confirming: false });
+    render(<SettingsPage profile={profile()} />);
+    const profileSection = within(screen.getByRole("region", { name: "Profile" }));
+    await userEvent.clear(screen.getByLabelText("Email"));
+    await userEvent.type(screen.getByLabelText("Email"), "maya@new.example");
+    await userEvent.type(profileSection.getByLabelText("Current password"), "secret password");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByText("Profile saved.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Confirmation code")).toBeNull();
   });
 
   it("saves only the name when the email is unchanged", async () => {

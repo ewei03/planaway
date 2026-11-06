@@ -26,3 +26,34 @@ export function appUrl(req: Request): string {
   if (process.env.NODE_ENV === "production") throw new Error("Set APP_URL to the site's public address, e.g. https://planaway.example.com.");
   return new URL(req.url).origin;
 }
+
+/**
+ * Whether new accounts confirm their email address with a code before they
+ * can sign in and plan. Off unless EMAIL_VERIFICATION=on, since it needs a
+ * working email provider (SMTP_HOST). While it's off, every account counts
+ * as confirmed; the daily limit on agent turns (dailyTurnLimit) still holds.
+ */
+export function emailVerificationOn(): boolean {
+  return process.env.EMAIL_VERIFICATION?.trim().toLowerCase() === "on";
+}
+
+/**
+ * Agent turns each account can start in 24 hours, so no one account can run
+ * up the AI bill: PLANAWAY_DAILY_TURNS, 20 by default, 0 for no limit.
+ */
+export function dailyTurnLimit(): number {
+  const raw = process.env.PLANAWAY_DAILY_TURNS?.trim();
+  if (!raw) return 20;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 20;
+}
+
+/**
+ * Whether emails actually reach people: SMTP_HOST is set (or, in the
+ * end-to-end tests, EMAIL_OUTBOX_DIR). Without it they're only printed to the
+ * server log, so pages that rely on an email, like "Forgot password?", say to
+ * get in touch instead.
+ */
+export function emailSendingOn(): boolean {
+  return Boolean(process.env.SMTP_HOST?.trim() || process.env.EMAIL_OUTBOX_DIR?.trim());
+}

@@ -22,8 +22,8 @@ import * as resend from "@/app/api/verify-email/route";
 import * as confirmCode from "@/app/api/verify-email/confirm/route";
 import { getDb, schema as s } from "@/lib/db";
 import { contactMessage, renderHtml, renderText, verifyEmailMessage } from "@/lib/email";
-import { appUrl } from "@/lib/site";
-import { findUserByEmail, getProfile, isEmailVerified, MAX_CODE_ATTEMPTS, verifyCredentials, verifyEmailCode, type UserRef } from "@/lib/store";
+import { appUrl, dailyTurnLimit } from "@/lib/site";
+import { claimTurn, deleteTrip, findUserByEmail, getProfile, isEmailVerified, MAX_CODE_ATTEMPTS, releaseTurn, verifyCredentials, verifyEmailCode, type UserRef } from "@/lib/store";
 
 function signIn(user: UserRef | null) {
   authMock.mockResolvedValue(user ? { user: { id: user.id, name: user.name } } : null);
@@ -202,6 +202,86 @@ describe("changing the email address", () => {
     await settings.PATCH(req("PATCH", "/api/settings", { email: user.email, password: user.password }));
     expect(sent()).toHaveLength(0);
     expect((await getProfile(user.id)).emailVerified).toBe(true);
+  });
+});
+
+describe("with email confirmation off", () => {
+  beforeEach(() => vi.stubEnv("EMAIL_VERIFICATION", ""));
+
+  it("lets a new account straight in, with nothing emailed", async () => {
+    const who = fresh();
+    const res = await register.POST(req("POST", "/api/register", who));
+    expect(await res.json()).toEqual({ ok: true, verify: false });
+    expect(sent()).toHaveLength(0);
+    const user = (await findUserByEmail(who.email))!;
+    expect(await isEmailVerified(user.id)).toBe(true);
+    signIn(user);
+    expect((await trips.POST()).status).toBe(201);
+  });
+
+  it("opens up accounts made while it was on and never confirmed", async () => {
+    vi.stubEnv("EMAIL_VERIFICATION", "on");
+    const user = await registerUser();
+    expect(await isEmailVerified(user.id)).toBe(false);
+    vi.stubEnv("EMAIL_VERIFICATION", "");
+    expect(await isEmailVerified(user.id)).toBe(true);
+    expect((await getProfile(user.id)).emailVerified).toBe(true);
+    signIn(user);
+    expect((await trips.POST()).status).toBe(201);
+  });
+
+  it("changes the address without asking for a code, and still tells the old one", async () => {
+    const user = await makeUser("Mover");
+    signIn(user);
+    const res = await settings.PATCH(req("PATCH", "/api/settings", { email: `new-${user.email}`, password: user.password }));
+    expect(await res.json()).toMatchObject({ email: `new-${user.email}`, emailVerified: true });
+    expect(sent().map((e) => e.subject)).toEqual(["Your PlanAway email address was changed"]);
+  });
+});
+
+describe("the daily limit on agent turns", () => {
+  it("stops an account after its turns for the day, even across trips and deleted trips", async () => {
+    vi.stubEnv("PLANAWAY_DAILY_TURNS", "2");
+    const user = await makeUser("Busy");
+    const [a, b] = [await makeTrip(user.id), await makeTrip(user.id)];
+    expect(await claimTurn(user.id, a)).toBe(true);
+    await releaseTurn(a);
+    await deleteTrip(user.id, a);
+    expect(await claimTurn(user.id, b)).toBe(true);
+    await releaseTurn(b);
+    await expect(claimTurn(user.id, b)).rejects.toThrow(/today's 2 requests/);
+
+    signIn(user);
+    const res = await messages.POST(req("POST", `/api/trips/${b}/messages`, { text: "One more" }), { params: Promise.resolve({ id: b }) });
+    expect(res.status).toBe(429);
+    // Someone else still has theirs.
+    const other = await makeUser("Other");
+    expect(await claimTurn(other.id, await makeTrip(other.id))).toBe(true);
+  });
+
+  it("counts only the last 24 hours", async () => {
+    vi.stubEnv("PLANAWAY_DAILY_TURNS", "1");
+    const user = await makeUser("Yesterday");
+    const tripId = await makeTrip(user.id);
+    expect(await claimTurn(user.id, tripId)).toBe(true);
+    await releaseTurn(tripId);
+    const db = await getDb();
+    await db.update(s.agentTurns).set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) }).where(eq(s.agentTurns.userId, user.id));
+    expect(await claimTurn(user.id, tripId)).toBe(true);
+  });
+
+  it("is 20 by default, and off at 0", async () => {
+    vi.stubEnv("PLANAWAY_DAILY_TURNS", "");
+    expect(dailyTurnLimit()).toBe(20);
+    vi.stubEnv("PLANAWAY_DAILY_TURNS", "0");
+    const user = await makeUser("Unlimited");
+    const tripId = await makeTrip(user.id);
+    for (let i = 0; i < 3; i++) {
+      expect(await claimTurn(user.id, tripId)).toBe(true);
+      await releaseTurn(tripId);
+    }
+    const db = await getDb();
+    expect(await db.select().from(s.agentTurns).where(eq(s.agentTurns.userId, user.id))).toHaveLength(0);
   });
 });
 

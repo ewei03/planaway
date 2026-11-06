@@ -60,6 +60,7 @@ export default defineConfig({
         OPERATOR_NAME: "Test Operator",
         // Emails are saved as files for the tests to read (see e2e/helpers.ts) instead of being sent.
         EMAIL_OUTBOX_DIR: OUTBOX_DIR,
+        EMAIL_VERIFICATION: "on",
         // Every test signs up from the same address; the limits are covered by the unit tests.
         PLANAWAY_RATE_LIMITS: "off",
       },

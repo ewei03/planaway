@@ -2,6 +2,8 @@
 // data/pglite directory and any DATABASE_URL in .env are never touched.
 delete process.env.DATABASE_URL;
 process.env.PGLITE_DIR = "memory://";
+// Tests cover confirming addresses; the ones for running without it turn it off themselves.
+process.env.EMAIL_VERIFICATION = "on";
 (globalThis as { __planawayDb?: unknown }).__planawayDb = undefined;
 
 // Every test starts with fresh limits on emails sent (sign-ups, resets, the contact form).

@@ -146,7 +146,7 @@ function ProfileSection({ profile }: { profile: Profile }) {
       setVerified(updated.emailVerified);
       setStatus({
         kind: "ok",
-        text: emailChanged ? `Profile saved. We sent a code to ${updated.email}: enter it below to confirm your new address.` : "Profile saved.",
+        text: emailChanged && !updated.emailVerified ? `Profile saved. We sent a code to ${updated.email}: enter it below to confirm your new address.` : "Profile saved.",
       });
     } catch (err) {
       setStatus({ kind: "error", text: (err as Error).message });
@@ -248,7 +248,7 @@ function ProfileSection({ profile }: { profile: Profile }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <p className="muted small">You sign in with your email, so changing it takes your password. We&rsquo;ll email the new address a code to confirm it.</p>
+            <p className="muted small">You sign in with your email, so changing it takes your password.</p>
           </>
         )}
         <div className="settings-actions">

@@ -7,6 +7,7 @@ import { getDb, schema as s, type Db } from "./db";
 import type { CommentTarget, EmailTokenPurpose, Role } from "./db/schema";
 import type { Itinerary } from "./itinerary";
 import { parseSettings, type UserSettings } from "./settings";
+import { dailyTurnLimit, emailVerificationOn } from "./site";
 
 export type { CommentTarget, Role };
 
@@ -19,6 +20,8 @@ export class NotFoundError extends Error {
 }
 export class ForbiddenError extends Error {}
 export class ConflictError extends Error {}
+/** Too many of something in a while, like agent turns in a day. */
+export class LimitError extends Error {}
 /** Input the route couldn't check up front, e.g. an image's real size. */
 export class InvalidInputError extends Error {}
 
@@ -30,6 +33,9 @@ export function requireRole(role: Role, min: Role, action: string): void {
 
 /** A lock older than this is from a crashed process and can be taken over. */
 const TURN_LOCK_MS = 15 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const dailyLimitReached = (limit: number) =>
+  `You've used today's ${limit} requests to PlanAway. You can ask again tomorrow; your trips stay open to view and edit.`;
 
 /** Someone counts as viewing a trip if their tab polled this recently. Tabs
  *  poll every 4 seconds, so one late poll doesn't make them blink out. */
@@ -284,6 +290,7 @@ export async function verifyEmailCode(email: string, code: string): Promise<"ver
 
 /** Whether the account's email address is confirmed. Sign-in waits for it. */
 export async function isEmailVerified(userId: string): Promise<boolean> {
+  if (!emailVerificationOn()) return true;
   const db = await getDb();
   const [u] = await db.select({ at: s.users.emailVerifiedAt }).from(s.users).where(eq(s.users.id, userId));
   return Boolean(u?.at);
@@ -318,6 +325,7 @@ export async function resetPassword(token: string, password: string): Promise<vo
 
 /** Planning uses the AI, which costs money to run, so it waits until the address is confirmed. */
 async function requireVerified(db: Db, userId: string): Promise<void> {
+  if (!emailVerificationOn()) return;
   const [u] = await db.select({ at: s.users.emailVerifiedAt }).from(s.users).where(eq(s.users.id, userId));
   if (!u) throw new NotFoundError("Account not found");
   if (!u.at) throw new ForbiddenError("Confirm your email address to plan trips. Enter the code we emailed you, or send a new one.");
@@ -362,7 +370,8 @@ export async function getProfile(userId: string): Promise<Profile> {
     id: u.id,
     name: u.name,
     email: u.email,
-    emailVerified: u.emailVerifiedAt !== null,
+    // With confirmation off (see emailVerificationOn), every account counts as confirmed.
+    emailVerified: u.emailVerifiedAt !== null || !emailVerificationOn(),
     birthDate: u.birthDate,
     avatarUrl: avatarUrl(u.id, u.avatarUpdatedAt),
     settings: parseSettings(u.settings),
@@ -406,7 +415,11 @@ export async function changeEmail(userId: string, email: string, password: strin
   if (normalized === u.email) return null;
   const [taken] = await db.select({ id: s.users.id }).from(s.users).where(eq(s.users.email, normalized));
   if (taken) throw new ConflictError("An account with that email already exists.");
-  await db.update(s.users).set({ email: normalized, emailVerifiedAt: null }).where(eq(s.users.id, userId));
+  // The new address needs confirming, when addresses are confirmed at all.
+  await db
+    .update(s.users)
+    .set({ email: normalized, ...(emailVerificationOn() ? { emailVerifiedAt: null } : {}) })
+    .where(eq(s.users.id, userId));
   return u.email;
 }
 
@@ -718,7 +731,6 @@ export const INVITE_EXPIRY_DAYS = [1, 7, 30, null] as const;
 export type InviteExpiry = (typeof INVITE_EXPIRY_DAYS)[number];
 export type InviteRole = Exclude<Role, "owner">;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const inviteIsLive = () => or(isNull(s.tripInvites.expiresAt), gt(s.tripInvites.expiresAt, new Date()));
 
 export async function createTripInvite(
@@ -838,11 +850,22 @@ export async function claimTurn(userId: string, tripId: string): Promise<boolean
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
     const busy = await runningTurn(tx, userId);
     if (busy && busy.id !== tripId) throw new ConflictError(stillPlanning(busy.title));
+    // Counted under the same lock, so turns sent at once can't get past the limit.
+    const limit = dailyTurnLimit();
+    if (limit > 0) {
+      const [{ n }] = await tx
+        .select({ n: count() })
+        .from(s.agentTurns)
+        .where(and(eq(s.agentTurns.userId, userId), gt(s.agentTurns.createdAt, new Date(Date.now() - DAY_MS))));
+      if (n >= limit) throw new LimitError(dailyLimitReached(limit));
+    }
     const claimed = await tx
       .update(s.trips)
       .set({ turnStartedAt: new Date(), turnUserId: userId, revision: sql`${s.trips.revision} + 1` })
       .where(and(eq(s.trips.id, tripId), or(isNull(s.trips.turnStartedAt), lt(s.trips.turnStartedAt, staleBefore))))
       .returning({ id: s.trips.id });
+    // Counted when it starts, since a turn that fails partway still used the AI.
+    if (claimed.length === 1 && limit > 0) await tx.insert(s.agentTurns).values({ userId });
     return claimed.length === 1;
   });
 }
